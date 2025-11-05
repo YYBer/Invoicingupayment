@@ -1,0 +1,20 @@
+{
+  "name": "invoicingu-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for Invoicingu",
+  "main": "Botserver.ts",
+  "scripts": {
+    "start": "ts-node Botserver.ts",
+    "dev": "ts-node Botserver.ts"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/node-telegram-bot-api": "^0.64.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
