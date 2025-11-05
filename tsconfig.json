@@ -21,7 +21,7 @@
   "include": [
     "src/**/*",
     "vite.config.ts"
-, "tsconfig.bot.json"  ],
+, "tsconfig.bot.json", "tailwind.config.js"  ],
   "exclude": ["node_modules"]
 }
 
