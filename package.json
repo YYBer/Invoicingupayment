@@ -1,20 +1,29 @@
 {
   "name": "invoicingu-telegram-bot",
   "version": "1.0.0",
-  "description": "Telegram bot for Invoicingu",
+  "description": "Telegram bot + Vite demo for Invoicingu",
   "main": "Botserver.ts",
   "scripts": {
-    "start": "ts-node Botserver.ts",
-    "dev": "ts-node Botserver.ts"
+    "bot": "ts-node Botserver.ts",
+    "bot:dev": "ts-node Botserver.ts",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "dependencies": {
+    "dotenv": "^16.4.5",
     "node-telegram-bot-api": "^0.66.0",
-    "dotenv": "^16.4.5"
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.9.5"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
-    "@types/node-telegram-bot-api": "^0.64.7",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vite": "^5.4.10"
   }
 }
