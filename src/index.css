@@ -1,0 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Optional: small global polish */
+html, body, #root { height: 100%; }
+body { @apply bg-gray-50 text-gray-900 antialiased; }
