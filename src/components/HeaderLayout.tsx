@@ -1,7 +1,5 @@
-// src/components/HeaderLayout.tsx
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Outlet, useNavigate, NavLink } from "react-router-dom";
-// import UserMenu from "./UserMenu";
 import { Helmet } from "react-helmet";
 
 const HeaderLayout: React.FC = () => {
@@ -24,7 +22,7 @@ const HeaderLayout: React.FC = () => {
   const handleLogoClick = () => navigate("/");
 
   return (
-    <div className="font-[Poppins] min-h-screen bg-white flex flex-col">
+    <div className="font-[Poppins] min-h-screen bg-gray-50 flex flex-col">
       <Helmet>
         <link
           href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap"
@@ -34,57 +32,85 @@ const HeaderLayout: React.FC = () => {
       </Helmet>
 
       {/* Header */}
-      <header className="w-full px-4 sm:px-6 py-4 bg-white shadow-md sticky top-0 z-50">
-        <div className="flex items-center justify-between gap-4 max-w-7xl mx-auto">
-          {/* Logo */}
-          <div onClick={handleLogoClick} className="flex items-center gap-3 cursor-pointer">
-            <img src="/invoicingu1.png" alt="Logo" className="h-10 sm:h-10 w-auto" />
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-gray-800">
+      <header className="w-full bg-white shadow-sm sticky top-0 z-50 border-b border-gray-100">
+        <div className="max-w-7xl mx-auto flex items-center justify-between px-4 sm:px-8 py-3">
+          {/* Logo + Brand */}
+          <div
+            onClick={handleLogoClick}
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer"
+          >
+            <img src="/invoicingu1.png" alt="InvoicingU logo" className="h-9 w-9" />
+            <h1 className="text-xl sm:text-2xl font-bold text-emerald-700 tracking-tight">
               InvoicingU
             </h1>
           </div>
 
-          {/* Right side: nav + user menu */}
-          <div className="flex items-center gap-6">
-            {/* Public links */}
-            <nav className="hidden sm:flex items-center gap-6">
-              <NavLink
-                to="/pricing_testing"
-                className={({ isActive }) =>
-                  `text-sm font-medium ${
-                    isActive
-                      ? "text-emerald-700"
-                      : "text-gray-700 hover:text-emerald-700"
-                  }`
-                }
-              >
-                Pricing
-              </NavLink>
+          {/* Navigation */}
+          <nav className="flex items-center gap-6">
+            <NavLink
+              to="/"
+              className={({ isActive }) =>
+                `text-sm font-medium transition ${
+                  isActive
+                    ? "text-emerald-700"
+                    : "text-gray-600 hover:text-emerald-700"
+                }`
+              }
+            >
+              Home
+            </NavLink>
 
-              {/* <NavLink
-                to="/feedback"
-                className={({ isActive }) =>
-                  `text-sm font-medium ${
-                    isActive
-                      ? "text-emerald-700"
-                      : "text-gray-700 hover:text-emerald-700"
-                  }`
-                }
-              >
-                Feedback
-              </NavLink> */}
-            </nav>
+            <NavLink
+              to="/pricing_testing"
+              className={({ isActive }) =>
+                `text-sm font-medium transition ${
+                  isActive
+                    ? "text-emerald-700"
+                    : "text-gray-600 hover:text-emerald-700"
+                }`
+              }
+            >
+              Pricing
+            </NavLink>
 
-            {/* User menu */}
-            {/* <UserMenu userName={user?.username || "Guest"} /> */}
-          </div>
+            <NavLink
+              to="/profile"
+              className={({ isActive }) =>
+                `text-sm font-medium transition ${
+                  isActive
+                    ? "text-emerald-700"
+                    : "text-gray-600 hover:text-emerald-700"
+                }`
+              }
+            >
+              Profile
+            </NavLink>
+
+            <NavLink
+              to="/feedback"
+              className={({ isActive }) =>
+                `text-sm font-medium transition ${
+                  isActive
+                    ? "text-emerald-700"
+                    : "text-gray-600 hover:text-emerald-700"
+                }`
+              }
+            >
+              Feedback
+            </NavLink>
+          </nav>
         </div>
       </header>
 
-      {/* Main outlet */}
-      <main className="flex-grow p-5 sm:p-6">
+      {/* Main content */}
+      <main className="flex-grow px-4 sm:px-8 py-6">
         <Outlet />
       </main>
+
+      {/* Footer */}
+      <footer className="text-center py-6 text-sm text-gray-500 border-t border-gray-100">
+        © {new Date().getFullYear()} InvoicingU — All rights reserved.
+      </footer>
     </div>
   );
 };
