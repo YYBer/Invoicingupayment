@@ -5,6 +5,13 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Mail, FileText, Edit, Wrench, Users, Download } from "lucide-react";
 import Header from "@/components/Header";
+import {
+  useTonConnectUI,
+  useTonAddress,
+  useTonWallet,
+  CHAIN,
+  useIsConnectionRestored,
+} from "@tonconnect/ui-react";
 
 type PlanName = "Free" | "Smart" | "Premium";
 
@@ -65,23 +72,29 @@ const BASE_PLANS: BasePlan[] = [
   },
 ];
 
-// === MVP TON settings (0.1 TON fixed) ===
-const MERCHANT_TON = import.meta.env.VITE_TON_MERCHANT_ADDRESS as string; // "UQxxxxxxxx..."
-const FIXED_NANO = 100_000_000n; // 0.1 TON
-
-function makeTonDeeplink(address: string, nano: bigint, memo: string) {
-  return `ton://transfer/${address}?amount=${nano.toString()}&text=${encodeURIComponent(memo)}`;
-}
+// === MVP TON settings (0.1 TON fixed, TESTNET) ===
+const MERCHANT_TON = import.meta.env
+  .VITE_TON_MERCHANT_ADDRESS_TESTNET as string; // e.g. "kQxxxx..."
+const FIXED_NANO = "100000000"; // 0.1 TON
 
 export default function Pricing() {
   const [currentPlan, setCurrentPlan] = useState<PlanName | null>(null);
   const [loading, setLoading] = useState(true);
   const [changing, setChanging] = useState<PlanName | null>(null);
+  const [networkError, setNetworkError] = useState<string | null>(null);
+
+  // TonConnect hooks
+  const [tonConnectUI] = useTonConnectUI();
+  const isRestored = useIsConnectionRestored();
+  const wallet = useTonWallet();
+  const userAddress = useTonAddress(); // empty if not connected
 
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("/api/billing/subscription", { credentials: "include" });
+        const res = await fetch("/api/billing/subscription", {
+          credentials: "include",
+        });
         const data = res.ok ? await res.json() : {};
         setCurrentPlan((data.plan as PlanName) ?? "Free");
       } catch {
@@ -103,37 +116,56 @@ export default function Pricing() {
 
   const handleSelect = async (plan: PlanName) => {
     if (plan === currentPlan) return;
-
     try {
       setChanging(plan);
+      setNetworkError(null);
 
       if (plan === "Free") {
-        const res = await fetch("/api/billing/downgrade", {
+        const r = await fetch("/api/billing/downgrade", {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ plan: "Free" }),
         });
-        if (!res.ok) throw new Error("Failed to downgrade");
+        if (!r.ok) throw new Error("Failed to downgrade");
         setCurrentPlan("Free");
         return;
       }
 
-      // === MVP TON FLOW: always 0.1 TON ===
-      if (!MERCHANT_TON) throw new Error("Missing VITE_TON_MERCHANT_ADDRESS");
-      const memo = `INV-${(crypto as any).randomUUID?.() ?? Math.random().toString(36).slice(2)}-${plan}`;
-      const tonUrl = makeTonDeeplink(MERCHANT_TON, FIXED_NANO, memo);
+      if (!MERCHANT_TON) throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
 
-      sessionStorage.setItem("tonMemo", memo);
-      sessionStorage.setItem("tonPlan", plan);
+      // 1️⃣ Ask user to connect wallet if not yet connected
+      if (!userAddress) {
+        await tonConnectUI.openModal();
+      }
 
-      // Redirect to the TON wallet (extension/app should handle ton://)
-      window.location.href = tonUrl;
+      // 2️⃣ Check that wallet is connected to TESTNET
+      const chain = wallet?.account?.chain;
+      if (chain !== CHAIN.TESTNET) {
+        setNetworkError(
+          "⚠️ Your wallet is on Mainnet. Please switch to Testnet in your extension settings and try again."
+        );
+        return;
+      }
 
-      // (Optional MVP): provide a manual “I’ve paid” path later that calls /api/billing/activate
+      // 3️⃣ Send 0.1 TON to merchant (testnet)
+      await tonConnectUI.sendTransaction({
+        validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+        messages: [
+          {
+            address: MERCHANT_TON,
+            amount: FIXED_NANO,
+          },
+        ],
+      });
+
+      // 4️⃣ (Optional) Trust-based unlock for MVP
+      // await fetch("/api/billing/activate", { method: "POST", credentials: "include",
+      //   headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify({ plan }) });
+
     } catch (e) {
       console.error(e);
-      // TODO: show toast
     } finally {
       setChanging(null);
     }
@@ -142,6 +174,7 @@ export default function Pricing() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
+
       <main className="container mx-auto px-4 py-16">
         <div className="mb-12 text-center">
           <h1 className="mb-4 text-4xl font-bold text-foreground md:text-5xl">
@@ -152,14 +185,16 @@ export default function Pricing() {
           </p>
         </div>
 
-        {loading ? (
-          <p className="text-center text-muted-foreground">Loading your plan…</p>
+        {loading || !isRestored ? (
+          <p className="text-center text-muted-foreground">Loading…</p>
         ) : (
           <div className="mx-auto grid max-w-6xl gap-8 md:grid-cols-3">
             {plans.map((plan) => (
               <Card
                 key={plan.name}
-                className={`relative p-8 ${plan.isCurrent ? "border-2 border-primary" : ""}`}
+                className={`relative p-8 ${
+                  plan.isCurrent ? "border-2 border-primary" : ""
+                }`}
               >
                 {plan.isCurrent && (
                   <Badge className="absolute right-4 top-4 bg-foreground text-background">
@@ -168,9 +203,17 @@ export default function Pricing() {
                 )}
 
                 <div className="mb-6">
-                  <h3 className="mb-2 text-2xl font-bold text-foreground">{plan.name}</h3>
-                  {plan.price && <p className="mb-2 text-3xl font-bold text-foreground">{plan.price}</p>}
-                  <p className="text-sm text-muted-foreground">{plan.description}</p>
+                  <h3 className="mb-2 text-2xl font-bold text-foreground">
+                    {plan.name}
+                  </h3>
+                  {plan.price && (
+                    <p className="mb-2 text-3xl font-bold text-foreground">
+                      {plan.price}
+                    </p>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    {plan.description}
+                  </p>
                 </div>
 
                 <ul className="mb-8 space-y-3">
@@ -183,21 +226,43 @@ export default function Pricing() {
                 </ul>
 
                 <Button
-                  className={`w-full ${plan.isCurrent ? "bg-primary text-primary-foreground hover:bg-primary/90" : ""}`}
+                  className={`w-full ${
+                    plan.isCurrent
+                      ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                      : ""
+                  }`}
                   variant={plan.buttonVariant as any}
                   disabled={plan.isCurrent || changing === plan.name}
                   onClick={() => handleSelect(plan.name)}
                 >
-                  {changing === plan.name ? "Opening TON wallet…" : plan.buttonText}
+                  {changing === plan.name
+                    ? "Opening wallet..."
+                    : plan.buttonText}
                 </Button>
+
+                {networkError && (
+                  <p className="mt-4 text-center text-sm text-red-600">
+                    {networkError}
+                  </p>
+                )}
               </Card>
             ))}
           </div>
         )}
 
         <p className="mt-12 text-center text-sm text-muted-foreground">
-          Paid with TON (MVP fixed 0.1 TON). Cancel anytime—access continues until the end of the paid term.
+          Paid with TON (Testnet, fixed 0.1 TON). Cancel anytime—access
+          continues until the end of the paid term.
         </p>
+
+        {wallet && (
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            Wallet network:{" "}
+            {wallet.account.chain === CHAIN.TESTNET
+              ? "Testnet ✅"
+              : "Mainnet ⚠️"}
+          </p>
+        )}
       </main>
     </div>
   );
