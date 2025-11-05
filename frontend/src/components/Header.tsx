@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { TonConnectButton } from "@tonconnect/ui-react";
 
 const Header = () => {
   return (
@@ -10,6 +11,7 @@ const Header = () => {
               <span className="text-lg font-bold text-background">iu</span>
             </div>
             <span className="text-xl font-bold text-foreground">Invoicingu</span>
+            <TonConnectButton />
           </Link>
           
           <nav className="flex items-center gap-8">

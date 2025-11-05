@@ -1,5 +1,20 @@
 import { createRoot } from "react-dom/client";
-import App from "./App.tsx";
+import App from "./App";
 import "./index.css";
+import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
-createRoot(document.getElementById("root")!).render(<App />);
+// IMPORTANT: use your Vercel URL
+const manifestUrl =
+  "https://frontend-g9lnc47kh-yys-projects-1e8098a8.vercel.app/.well-known/tonconnect-manifest.json";
+
+createRoot(document.getElementById("root")!).render(
+  <TonConnectUIProvider manifestUrl={manifestUrl}>
+    <App />
+  </TonConnectUIProvider>
+);
+
+// import { createRoot } from "react-dom/client";
+// import App from "./App.tsx";
+// import "./index.css";
+
+// createRoot(document.getElementById("root")!).render(<App />);
