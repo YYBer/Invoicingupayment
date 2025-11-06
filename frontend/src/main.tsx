@@ -5,7 +5,7 @@ import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
 // IMPORTANT: use your Vercel URL
 const manifestUrl =
-  "https://frontend-g9lnc47kh-yys-projects-1e8098a8.vercel.app/.well-known/tonconnect-manifest.json";
+  "https://invoicingupayment-ton.vercel.app/.well-known/tonconnect-manifest.json";
 
 createRoot(document.getElementById("root")!).render(
   <TonConnectUIProvider manifestUrl={manifestUrl}>
