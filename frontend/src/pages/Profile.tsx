@@ -198,6 +198,11 @@ export default function Profile() {
       return;
     }
 
+    if (!tonstakers.isInitialized) {
+      toast.error("Tonstakers SDK is still initializing. Please wait a moment and try again.");
+      return;
+    }
+
     if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -224,6 +229,11 @@ export default function Profile() {
       return;
     }
 
+    if (!tonstakers.isInitialized) {
+      toast.error("Tonstakers SDK is still initializing. Please wait a moment and try again.");
+      return;
+    }
+
     try {
       setStakeLoading(true);
       await tonstakers.stakeMax();
@@ -241,6 +251,11 @@ export default function Profile() {
   const handleUnstake = async (type: "regular" | "instant" | "bestRate") => {
     if (!tonstakers.isConnected) {
       toast.error("Please connect your wallet first");
+      return;
+    }
+
+    if (!tonstakers.isInitialized) {
+      toast.error("Tonstakers SDK is still initializing. Please wait a moment and try again.");
       return;
     }
 
@@ -379,6 +394,21 @@ export default function Profile() {
                 Click the "Connect Wallet" button in the header to connect your
                 TonKeeper wallet
               </p>
+            </div>
+          ) : !tonstakers.isInitialized ? (
+            <div className="rounded-lg border border-border bg-muted/50 p-8 text-center">
+              <Clock className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
+              <p className="mb-4 text-lg font-medium text-foreground">
+                Initializing Tonstakers SDK...
+              </p>
+              <p className="text-sm text-muted-foreground">
+                This may take up to 30 seconds. Check browser console for details.
+              </p>
+              {tonstakers.isLoading && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Please wait while we connect to the staking protocol...
+                </p>
+              )}
             </div>
           ) : tonstakers.isLoading ? (
             <p className="text-muted-foreground">Loading staking data…</p>
@@ -521,17 +551,17 @@ export default function Profile() {
                     <div className="flex gap-3">
                       <Button
                         onClick={handleStake}
-                        disabled={stakeLoading || !stakeAmount}
+                        disabled={stakeLoading || !stakeAmount || !tonstakers.isInitialized}
                         className="flex-1"
                       >
-                        {stakeLoading ? "Processing…" : "Stake"}
+                        {stakeLoading ? "Processing…" : !tonstakers.isInitialized ? "Initializing..." : "Stake"}
                       </Button>
                       <Button
                         onClick={handleStakeMax}
-                        disabled={stakeLoading}
+                        disabled={stakeLoading || !tonstakers.isInitialized}
                         variant="outline"
                       >
-                        Stake Max
+                        {!tonstakers.isInitialized ? "Initializing..." : "Stake Max"}
                       </Button>
                     </div>
                   </div>
@@ -593,30 +623,32 @@ export default function Profile() {
                     <div className="space-y-3">
                       <Button
                         onClick={() => handleUnstake("regular")}
-                        disabled={unstakeLoading || !unstakeAmount}
+                        disabled={unstakeLoading || !unstakeAmount || !tonstakers.isInitialized}
                         className="w-full"
                       >
                         {unstakeLoading
                           ? "Processing…"
+                          : !tonstakers.isInitialized
+                          ? "Initializing..."
                           : "Regular Unstake (Delayed, Best Rate)"}
                       </Button>
 
                       <Button
                         onClick={() => handleUnstake("instant")}
-                        disabled={unstakeLoading || !unstakeAmount}
+                        disabled={unstakeLoading || !unstakeAmount || !tonstakers.isInitialized}
                         variant="outline"
                         className="w-full"
                       >
-                        Instant Unstake (Uses Liquidity Pool)
+                        {!tonstakers.isInitialized ? "Initializing..." : "Instant Unstake (Uses Liquidity Pool)"}
                       </Button>
 
                       <Button
                         onClick={() => handleUnstake("bestRate")}
-                        disabled={unstakeLoading || !unstakeAmount}
+                        disabled={unstakeLoading || !unstakeAmount || !tonstakers.isInitialized}
                         variant="outline"
                         className="w-full"
                       >
-                        Best Rate Unstake (Wait Till Round End)
+                        {!tonstakers.isInitialized ? "Initializing..." : "Best Rate Unstake (Wait Till Round End)"}
                       </Button>
 
                       <p className="text-sm text-muted-foreground">

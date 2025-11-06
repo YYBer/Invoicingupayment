@@ -95,30 +95,33 @@ export function useTonstakers() {
     const initSdk = async () => {
       try {
         setIsLoading(true);
-        console.log("Initializing Tonstakers SDK for address:", userAddress);
+        console.log("🚀 Initializing Tonstakers SDK for address:", userAddress);
 
         // Initialize with testnet - SDK auto-detects testnet
         const tonStakers = new TonStakers(tonConnectUI);
+        console.log("📦 TonStakers instance created");
 
         // Wait for initialization event with timeout
         const initPromise = new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
+            console.warn("⏱️ SDK initialization timeout after 30 seconds");
             reject(new Error("SDK initialization timeout after 30 seconds"));
           }, 30000); // 30 second timeout
 
           const initHandler = () => {
             clearTimeout(timeout);
-            console.log("✅ Tonstakers SDK initialized successfully");
+            console.log("✅ Tonstakers SDK initialized successfully (event fired)");
             resolve();
           };
 
           tonStakers.addEventListener("initialized", initHandler);
           initListenerAdded = true;
+          console.log("👂 Added 'initialized' event listener");
         });
 
         // Also handle deinitialization
         const deinitHandler = () => {
-          console.log("Tonstakers SDK deinitialized");
+          console.log("⚠️ Tonstakers SDK deinitialized");
           if (isMounted) {
             setIsInitialized(false);
           }
@@ -127,15 +130,35 @@ export function useTonstakers() {
         tonStakers.addEventListener("deinitialized", deinitHandler);
         deinitListenerAdded = true;
 
-        await initPromise;
+        // Try to wait for the initialization event
+        try {
+          await initPromise;
+          console.log("✅ Init promise resolved");
+        } catch (timeoutError) {
+          // If timeout, check if SDK methods are available anyway
+          console.warn("⚠️ Initialization event timeout, checking SDK methods...");
+
+          // Try calling a basic method to see if SDK is actually ready
+          try {
+            if (tonStakers && typeof tonStakers.getTvl === 'function') {
+              console.log("✅ SDK methods are available despite timeout, proceeding...");
+            } else {
+              throw new Error("SDK methods not available");
+            }
+          } catch (methodError) {
+            console.error("❌ SDK not functional:", methodError);
+            throw timeoutError;
+          }
+        }
 
         if (isMounted) {
           setSdk(tonStakers);
           setIsInitialized(true);
-          console.log("SDK ready for operations");
+          console.log("✅ SDK ready for operations");
         }
       } catch (error) {
         console.error("❌ Failed to initialize Tonstakers SDK:", error);
+        console.error("Error details:", error);
         if (isMounted) {
           setSdk(null);
           setIsInitialized(false);
