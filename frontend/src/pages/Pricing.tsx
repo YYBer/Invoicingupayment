@@ -80,7 +80,7 @@ function normalizeTestnetAddress(addr: string): string {
   const raw = stripTonLink(addr.trim());
   let parsed: Address;
   try {
-    parsed = Address.parse(raw); // accepts both raw ("0:<64hex>") and friendly
+    parsed = Address.parse(raw); 
   } catch (e) {
     console.error("Address.parse failed for:", raw, e);
     throw new Error("Merchant address is not a valid TON address string");
@@ -92,7 +92,6 @@ function normalizeTestnetAddress(addr: string): string {
   }
   return friendly;
 }
-
 
 
 // Comment payload -> base64 BOC (browser-safe)
@@ -108,13 +107,6 @@ function makeCommentPayload(text: string): string {
   return btoa(binary);
 }
 
-// function makeCommentPayload(text: string): string {
-//   // Keep comments reasonably short for wallet UIs
-//   const safeText = text.length > 180 ? text.slice(0, 177) + "..." : text;
-//   const cell = beginCell().storeUint(0, 32).storeStringTail(safeText).endCell();
-//   return cell.toBoc({ idx: false }).toString("base64");
-// }
-
 // Accepts raw address or ton://transfer/<addr>, returns testnet, non-bounceable, url-safe
 function stripTonLink(s: string) {
   const t = s.trim();
@@ -129,13 +121,6 @@ function stripTonLink(s: string) {
   }
   return t;
 }
-
-// function normalizeTestnetAddress(addr: string): string {
-//   const raw = stripTonLink(addr);
-//   const parsed = Address.parse(raw); // throws if invalid
-//   // Non-bounceable tends to be friendlier for typical wallets
-//   return parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
-// }
 
 // Preflight checks before sendTransaction
 function preflightTon({
@@ -176,8 +161,6 @@ function isRawAddr(s: string) {
 /* -----------------------------
    MVP TON settings (TESTNET)
 --------------------------------*/
-// const MERCHANT_TON = import.meta.env
-//   .VITE_TON_MERCHANT_ADDRESS_TESTNET as string; // e.g. "kQxxxx..." (full, not shortened)
 const MERCHANT_TON_RAW = ensureEnvAddress(
   "VITE_TON_MERCHANT_ADDRESS_TESTNET",
   import.meta.env.VITE_TON_MERCHANT_ADDRESS_TESTNET
@@ -252,18 +235,32 @@ export default function Pricing() {
 
       // 1) Ask user to connect wallet if not yet connected
       if (!userAddress) {
-        await tonConnectUI.openModal(); // user connects here
+        await tonConnectUI.openModal();
+        // After opening modal, return and wait for state to update
+        return; 
       }
 
-      // 2) Check that wallet is connected to TESTNET, and inputs are valid
-      preflightTon({
-        walletChain: wallet?.account?.chain,
-        merchantAddr: MERCHANT_TON_RAW,
-        fixedNano: FIXED_NANO,
-      });
+      // **Fix**: Ensure wallet object is loaded before checking chain
+      if (!wallet) {
+          setNetworkError("Wallet details are not fully loaded. Please wait a moment and try again.");
+          return;
+      }
+
+      // 2) Check if wallet is on testnet
+      if (wallet.account.chain !== CHAIN.TESTNET) {
+        setNetworkError("Please switch your wallet to TESTNET network and try again.");
+        return;
+      }
+
+      // 3) Validate inputs
+      if (!MERCHANT_TON_RAW) {
+        throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
+      }
+      if (!/^\d+$/.test(FIXED_NANO)) {
+        throw new Error("Invalid FIXED_NANO; must be a string of digits in nanotons.");
+      }
 
       // 3) Validate & normalize the merchant testnet address
-      // const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
       const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON_RAW);
       console.log("[TON] about to send", {
         chain: wallet?.account?.chain,
@@ -271,13 +268,6 @@ export default function Pricing() {
         length: normalizedMerchant.length,
         startsWith: normalizedMerchant.slice(0, 2),
       });
-
-      // function normalizeTestnetAddress(addr: string): string {
-      //   const raw = stripTonLink(addr);
-      //   const parsed = Address.parse(raw); // throws if invalid
-      //   // Non-bounceable tends to be friendlier for typical wallets
-      //   return parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
-      // }
       
 
       // 4) Optional comment so you can match payments on the backend
