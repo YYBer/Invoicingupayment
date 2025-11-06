@@ -252,15 +252,23 @@ export default function Pricing() {
 
       // 1) Ask user to connect wallet if not yet connected
       if (!userAddress) {
-        await tonConnectUI.openModal(); // user connects here
+        await tonConnectUI.openModal();
+        return;
       }
 
-      // 2) Check that wallet is connected to TESTNET, and inputs are valid
-      preflightTon({
-        walletChain: wallet?.account?.chain,
-        merchantAddr: MERCHANT_TON_RAW,
-        fixedNano: FIXED_NANO,
-      });
+      // 2) Check if wallet is on testnet
+      if (wallet?.account?.chain !== CHAIN.TESTNET) {
+        setNetworkError("Please switch your wallet to TESTNET network and try again.");
+        return;
+      }
+
+      // 3) Validate inputs
+      if (!MERCHANT_TON_RAW) {
+        throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
+      }
+      if (!/^\d+$/.test(FIXED_NANO)) {
+        throw new Error("Invalid FIXED_NANO; must be a string of digits in nanotons.");
+      }
 
       // 3) Validate & normalize the merchant testnet address
       // const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
