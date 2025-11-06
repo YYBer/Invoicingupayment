@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Mail, FileText, Edit, Wrench, Users, Download } from "lucide-react";
+import { Address, beginCell } from "@ton/core";
 import Header from "@/components/Header";
 import {
   useTonConnectUI,
@@ -71,6 +72,40 @@ const BASE_PLANS: BasePlan[] = [
     ctaLabel: "Upgrade with TON to Premium",
   },
 ];
+
+
+// Build a base64-encoded comment payload cell
+function makeCommentPayload(text: string): string {
+  const cell = beginCell().storeUint(0, 32).storeStringTail(text).endCell();
+  // idx:false is important for wallet compatibility
+  return cell.toBoc({ idx: false }).toString("base64");
+}
+
+// Ensure the address is a valid *testnet* user-friendly address
+function normalizeTestnetAddress(addr: string): string {
+  // Will throw if invalid
+  const parsed = Address.parse(addr.trim());
+  // Force test-only user-friendly string (kQ... or 0Q...)
+  return parsed.toString({ urlSafe: true, bounceable: true, testOnly: true });
+}
+
+// Lightweight preflight to give good messages before sendTransaction
+function preflightTon({
+  walletChain,
+  merchantAddr,
+}: {
+  walletChain: string | undefined;
+  merchantAddr: string;
+}) {
+  if (!merchantAddr) {
+    throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
+  }
+  if (walletChain !== CHAIN.TESTNET) {
+    throw new Error(
+      "Wallet is on Mainnet. Switch your wallet to Testnet and try again."
+    );
+  }
+}
 
 // === MVP TON settings (0.1 TON fixed, TESTNET) ===
 const MERCHANT_TON = import.meta.env
@@ -149,20 +184,51 @@ export default function Pricing() {
       }
 
       // 3️⃣ Send 0.1 TON to merchant (testnet)
-      await tonConnectUI.sendTransaction({
-        validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
-        messages: [
-          {
-            address: MERCHANT_TON,
-            amount: FIXED_NANO,
-          },
-        ],
-      });
+      // await tonConnectUI.sendTransaction({
+      //   validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+      //   messages: [
+      //     {
+      //       address: MERCHANT_TON,
+      //       amount: FIXED_NANO,
+      //       // payload: 
+      //     },
+      //   ],
+      // });
+      // 3️⃣ Send 0.1 TON to merchant (testnet)
+      try {
+        preflightTon({ walletChain: wallet?.account?.chain, merchantAddr: MERCHANT_TON });
+
+        // Validate & normalize the merchant testnet address
+        const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
+
+        // Optional comment so you can match payments on the backend
+        const comment = `InvoicingU ${plan} | ${userAddress || "unknown"} | ${new Date().toISOString()}`;
+        const payloadBase64 = makeCommentPayload(comment);
+
+        await tonConnectUI.sendTransaction({
+          validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+          messages: [
+            {
+              address: normalizedMerchant,   // ✅ full, testnet-safe format
+              amount: FIXED_NANO,            // ✅ string in nanotons ("100000000" = 0.1 TON)
+              payload: payloadBase64,        // ✅ base64 BOC (comment cell)
+            },
+          ],
+        });
+      } catch (err: any) {
+        // Map the frequent TON_CONNECT_SDK_ERROR to a friendlier message
+        const msg =
+          typeof err?.message === "string" ? err.message :
+          "Transaction failed. Check that your wallet is on Testnet and the address is correct.";
+        setNetworkError(`TON error: ${msg}`);
+        throw err; // still rethrow so outer catch logs it
+      }
+
 
       // 4️⃣ (Optional) Trust-based unlock for MVP
-      // await fetch("/api/billing/activate", { method: "POST", credentials: "include",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ plan }) });
+      await fetch("/api/billing/activate", { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }) });
 
     } catch (e) {
       console.error(e);
