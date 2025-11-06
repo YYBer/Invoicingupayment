@@ -128,11 +128,31 @@ function preflightTon({
   }
 }
 
+function ensureEnvAddress(name: string, v: unknown): string {
+  const s = String(v ?? "").trim();
+  if (!s || s.toLowerCase() === "undefined" || s.toLowerCase() === "null") {
+    throw new Error(`${name} is missing or invalid. Put a FULL testnet address in your .env`);
+  }
+  return s;
+}
+
+function isRawAddr(s: string) {
+  // raw form: "<workchain>:<64hex>", usually "0:<64hex>" or "-1:<64hex>"
+  return /^(?:-?1|0):[0-9a-fA-F]{64}$/.test(s);
+}
+
+
+
 /* -----------------------------
    MVP TON settings (TESTNET)
 --------------------------------*/
-const MERCHANT_TON = import.meta.env
-  .VITE_TON_MERCHANT_ADDRESS_TESTNET as string; // e.g. "kQxxxx..." (full, not shortened)
+// const MERCHANT_TON = import.meta.env
+//   .VITE_TON_MERCHANT_ADDRESS_TESTNET as string; // e.g. "kQxxxx..." (full, not shortened)
+const MERCHANT_TON_RAW = ensureEnvAddress(
+  "VITE_TON_MERCHANT_ADDRESS_TESTNET",
+  import.meta.env.VITE_TON_MERCHANT_ADDRESS_TESTNET
+);
+
 const FIXED_NANO = "100000000"; // "0.1 TON" in nanotons (string)
 
 const USER_REJECTED = "User rejected the request";
@@ -192,7 +212,7 @@ export default function Pricing() {
         return;
       }
 
-      if (!MERCHANT_TON) throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
+      if (!MERCHANT_TON_RAW) throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
 
       // Wait for TonConnect state to be restored
       if (!isRestored) {
@@ -208,12 +228,37 @@ export default function Pricing() {
       // 2) Check that wallet is connected to TESTNET, and inputs are valid
       preflightTon({
         walletChain: wallet?.account?.chain,
-        merchantAddr: MERCHANT_TON,
+        merchantAddr: MERCHANT_TON_RAW,
         fixedNano: FIXED_NANO,
       });
 
       // 3) Validate & normalize the merchant testnet address
-      const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
+      // const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
+      const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON_RAW);
+      console.log("[TON] about to send", {
+        chain: wallet?.account?.chain,
+        merchant: normalizedMerchant,
+        length: normalizedMerchant.length,
+        startsWith: normalizedMerchant.slice(0, 2),
+      });
+
+      function normalizeTestnetAddress(addr: string): string {
+        const raw = stripTonLink(addr.trim());
+        let parsed: Address;
+        try {
+          parsed = Address.parse(raw); // accepts both raw ("0:<64hex>") and friendly
+        } catch (e) {
+          console.error("Address.parse failed for:", raw, e);
+          throw new Error("Merchant address is not a valid TON address string");
+        }
+        // Wallet-friendly user-format for TESTNET
+        const friendly = parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
+        if (!/^[A-Za-z0-9_-]+$/.test(friendly)) {
+          throw new Error("Normalized address contains invalid characters");
+        }
+        return friendly;
+      }
+      
 
       // 4) Optional comment so you can match payments on the backend
       const comment = `InvoicingU ${plan} | ${userAddress || "unknown"} | ${new Date().toISOString()}`;
