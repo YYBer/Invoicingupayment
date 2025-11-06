@@ -73,44 +73,69 @@ const BASE_PLANS: BasePlan[] = [
   },
 ];
 
+/* -----------------------------
+   TON helpers (payload/address)
+--------------------------------*/
 
-// Build a base64-encoded comment payload cell
+// Comment payload -> base64 BOC
 function makeCommentPayload(text: string): string {
-  const cell = beginCell().storeUint(0, 32).storeStringTail(text).endCell();
-  // idx:false is important for wallet compatibility
+  // Keep comments reasonably short for wallet UIs
+  const safeText = text.length > 180 ? text.slice(0, 177) + "..." : text;
+  const cell = beginCell().storeUint(0, 32).storeStringTail(safeText).endCell();
   return cell.toBoc({ idx: false }).toString("base64");
 }
 
-// Ensure the address is a valid *testnet* user-friendly address
-function normalizeTestnetAddress(addr: string): string {
-  // Will throw if invalid
-  const parsed = Address.parse(addr.trim());
-  // Force test-only user-friendly string (kQ... or 0Q...)
-  return parsed.toString({ urlSafe: true, bounceable: true, testOnly: true });
+// Accepts raw address or ton://transfer/<addr>, returns testnet, non-bounceable, url-safe
+function stripTonLink(s: string) {
+  const t = s.trim();
+  if (t.startsWith("ton://")) {
+    try {
+      const u = new URL(t);
+      const addr = u.pathname.replace(/^\/+/, "");
+      return addr || t;
+    } catch {
+      return t;
+    }
+  }
+  return t;
 }
 
-// Lightweight preflight to give good messages before sendTransaction
+function normalizeTestnetAddress(addr: string): string {
+  const raw = stripTonLink(addr);
+  const parsed = Address.parse(raw); // throws if invalid
+  // Non-bounceable tends to be friendlier for typical wallets
+  return parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
+}
+
+// Preflight checks before sendTransaction
 function preflightTon({
   walletChain,
   merchantAddr,
+  fixedNano,
 }: {
   walletChain: string | undefined;
   merchantAddr: string;
+  fixedNano: string;
 }) {
   if (!merchantAddr) {
     throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
   }
   if (walletChain !== CHAIN.TESTNET) {
-    throw new Error(
-      "Wallet is on Mainnet. Switch your wallet to Testnet and try again."
-    );
+    throw new Error("Wallet is on Mainnet. Switch your wallet to Testnet and try again.");
+  }
+  if (!/^\d+$/.test(fixedNano)) {
+    throw new Error("Invalid FIXED_NANO; must be a string of digits in nanotons.");
   }
 }
 
-// === MVP TON settings (0.1 TON fixed, TESTNET) ===
+/* -----------------------------
+   MVP TON settings (TESTNET)
+--------------------------------*/
 const MERCHANT_TON = import.meta.env
-  .VITE_TON_MERCHANT_ADDRESS_TESTNET as string; // e.g. "kQxxxx..."
-const FIXED_NANO = "100000000"; // 0.1 TON
+  .VITE_TON_MERCHANT_ADDRESS_TESTNET as string; // e.g. "kQxxxx..." (full, not shortened)
+const FIXED_NANO = "100000000"; // "0.1 TON" in nanotons (string)
+
+const USER_REJECTED = "User rejected the request";
 
 export default function Pricing() {
   const [currentPlan, setCurrentPlan] = useState<PlanName | null>(null);
@@ -150,7 +175,7 @@ export default function Pricing() {
   }, [currentPlan]);
 
   const handleSelect = async (plan: PlanName) => {
-    if (plan === currentPlan) return;
+    if (plan === currentPlan || changing) return;
     try {
       setChanging(plan);
       setNetworkError(null);
@@ -169,69 +194,65 @@ export default function Pricing() {
 
       if (!MERCHANT_TON) throw new Error("Missing VITE_TON_MERCHANT_ADDRESS_TESTNET");
 
-      // 1️⃣ Ask user to connect wallet if not yet connected
-      if (!userAddress) {
-        await tonConnectUI.openModal();
-      }
-
-      // 2️⃣ Check that wallet is connected to TESTNET
-      const chain = wallet?.account?.chain;
-      if (chain !== CHAIN.TESTNET) {
-        setNetworkError(
-          "⚠️ Your wallet is on Mainnet. Please switch to Testnet in your extension settings and try again."
-        );
+      // Wait for TonConnect state to be restored
+      if (!isRestored) {
+        setNetworkError("Wallet is still initializing. Please try again in a moment.");
         return;
       }
 
-      // 3️⃣ Send 0.1 TON to merchant (testnet)
-      // await tonConnectUI.sendTransaction({
-      //   validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
-      //   messages: [
-      //     {
-      //       address: MERCHANT_TON,
-      //       amount: FIXED_NANO,
-      //       // payload: 
-      //     },
-      //   ],
-      // });
-      // 3️⃣ Send 0.1 TON to merchant (testnet)
-      try {
-        preflightTon({ walletChain: wallet?.account?.chain, merchantAddr: MERCHANT_TON });
-
-        // Validate & normalize the merchant testnet address
-        const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
-
-        // Optional comment so you can match payments on the backend
-        const comment = `InvoicingU ${plan} | ${userAddress || "unknown"} | ${new Date().toISOString()}`;
-        const payloadBase64 = makeCommentPayload(comment);
-
-        await tonConnectUI.sendTransaction({
-          validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
-          messages: [
-            {
-              address: normalizedMerchant,   // ✅ full, testnet-safe format
-              amount: FIXED_NANO,            // ✅ string in nanotons ("100000000" = 0.1 TON)
-              payload: payloadBase64,        // ✅ base64 BOC (comment cell)
-            },
-          ],
-        });
-      } catch (err: any) {
-        // Map the frequent TON_CONNECT_SDK_ERROR to a friendlier message
-        const msg =
-          typeof err?.message === "string" ? err.message :
-          "Transaction failed. Check that your wallet is on Testnet and the address is correct.";
-        setNetworkError(`TON error: ${msg}`);
-        throw err; // still rethrow so outer catch logs it
+      // 1) Ask user to connect wallet if not yet connected
+      if (!userAddress) {
+        await tonConnectUI.openModal(); // user connects here
       }
 
+      // 2) Check that wallet is connected to TESTNET, and inputs are valid
+      preflightTon({
+        walletChain: wallet?.account?.chain,
+        merchantAddr: MERCHANT_TON,
+        fixedNano: FIXED_NANO,
+      });
 
-      // 4️⃣ (Optional) Trust-based unlock for MVP
-      await fetch("/api/billing/activate", { method: "POST", credentials: "include",
+      // 3) Validate & normalize the merchant testnet address
+      const normalizedMerchant = normalizeTestnetAddress(MERCHANT_TON);
+
+      // 4) Optional comment so you can match payments on the backend
+      const comment = `InvoicingU ${plan} | ${userAddress || "unknown"} | ${new Date().toISOString()}`;
+      const payloadBase64 = makeCommentPayload(comment);
+
+      // 5) Send 0.1 TON to merchant (testnet)
+      await tonConnectUI.sendTransaction({
+        validUntil: Math.floor(Date.now() / 1000) + 300, // 5 minutes
+        messages: [
+          {
+            address: normalizedMerchant,   // full, testnet-safe format
+            amount: FIXED_NANO,            // string in nanotons ("100000000" = 0.1 TON)
+            payload: payloadBase64,        // base64 BOC (comment cell)
+          },
+        ],
+      });
+
+      // 6) (Optional) Trust-based unlock for MVP
+      const act = await fetch("/api/billing/activate", {
+        method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }) });
-
-    } catch (e) {
-      console.error(e);
+        body: JSON.stringify({ plan }),
+      });
+      if (!act.ok) throw new Error("Failed to activate plan after payment");
+      setCurrentPlan(plan);
+    } catch (err: any) {
+      console.error(err);
+      const msg =
+        typeof err?.message === "string" ? err.message : "Unknown TON error";
+      if (msg.toLowerCase().includes("reject") || msg.toLowerCase().includes("cancel")) {
+        setNetworkError(USER_REJECTED);
+      } else if (msg.toLowerCase().includes("address")) {
+        setNetworkError("Invalid TON address. Re-check VITE_TON_MERCHANT_ADDRESS_TESTNET (full, no '...').");
+      } else if (msg.toLowerCase().includes("network") || msg.toLowerCase().includes("mainnet")) {
+        setNetworkError("Wrong network. Please switch your wallet to Testnet.");
+      } else {
+        setNetworkError(`TON error: ${msg}`);
+      }
     } finally {
       setChanging(null);
     }
