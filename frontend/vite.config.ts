@@ -19,15 +19,15 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      buffer: "buffer",           // 👈 map Buffer to browser shim
+      buffer: "buffer",        // 👈 map `buffer` to the browser shim
     },
   },
   optimizeDeps: {
-    include: ["buffer"],          // 👈 prebundle the shim
+    include: ["buffer"],       // 👈 prebundle the shim (and speed up)
   },
   define: {
-    global: "window",             // 👈 some libs expect Node's 'global'
-    "process.env": {},            // 👈 silence process.env lookups
+    global: "globalThis",      // 👈 some libs expect Node's `global`
+    "process.env": {},         // 👈 silence process.env lookups in browser
   },
 }));
 
