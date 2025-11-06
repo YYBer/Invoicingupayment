@@ -78,12 +78,25 @@ const BASE_PLANS: BasePlan[] = [
 --------------------------------*/
 
 // Comment payload -> base64 BOC
+// Comment payload -> base64 BOC (browser-safe)
 function makeCommentPayload(text: string): string {
-  // Keep comments reasonably short for wallet UIs
   const safeText = text.length > 180 ? text.slice(0, 177) + "..." : text;
   const cell = beginCell().storeUint(0, 32).storeStringTail(safeText).endCell();
-  return cell.toBoc({ idx: false }).toString("base64");
+  const boc = cell.toBoc({ idx: false });
+  // Convert Uint8Array → base64 (browser-friendly)
+  let binary = "";
+  for (let i = 0; i < boc.length; i++) {
+    binary += String.fromCharCode(boc[i]);
+  }
+  return btoa(binary);
 }
+
+// function makeCommentPayload(text: string): string {
+//   // Keep comments reasonably short for wallet UIs
+//   const safeText = text.length > 180 ? text.slice(0, 177) + "..." : text;
+//   const cell = beginCell().storeUint(0, 32).storeStringTail(safeText).endCell();
+//   return cell.toBoc({ idx: false }).toString("base64");
+// }
 
 // Accepts raw address or ton://transfer/<addr>, returns testnet, non-bounceable, url-safe
 function stripTonLink(s: string) {
