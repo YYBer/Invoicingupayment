@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useTonConnectUI, useTonAddress } from "@tonconnect/ui-react";
+import { useTonConnectUI, useTonAddress, useTonWallet } from "@tonconnect/ui-react";
 import { TonStakers } from "tonstakers-sdk";
 
 // Types for Tonstakers SDK responses
@@ -24,6 +24,7 @@ export type RoundTimestamps = {
 export function useTonstakers() {
   const [tonConnectUI] = useTonConnectUI();
   const userAddress = useTonAddress();
+  const wallet = useTonWallet();
   const [sdk, setSdk] = useState<TonStakers | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -54,6 +55,31 @@ export function useTonstakers() {
   // Loading states
   const [isLoading, setIsLoading] = useState(false);
 
+  // Helper function to fetch wallet balance from TON blockchain
+  const fetchWalletBalance = useCallback(async (): Promise<string> => {
+    if (!userAddress) return "0";
+
+    try {
+      // Try to use TON Center API (testnet)
+      const isTestnet = wallet?.account.chain === "-3"; // -3 is testnet chain ID
+      const apiUrl = isTestnet
+        ? "https://testnet.toncenter.com/api/v2/getAddressBalance"
+        : "https://toncenter.com/api/v2/getAddressBalance";
+
+      const response = await fetch(`${apiUrl}?address=${userAddress}`);
+      const data = await response.json();
+
+      if (data.ok && data.result) {
+        console.log("Wallet balance fetched:", data.result);
+        return data.result; // Returns balance in nanotons
+      }
+    } catch (error) {
+      console.warn("Failed to fetch wallet balance from API:", error);
+    }
+
+    return "0";
+  }, [userAddress, wallet]);
+
   // Initialize SDK when wallet connects
   useEffect(() => {
     if (!userAddress) {
@@ -63,41 +89,53 @@ export function useTonstakers() {
     }
 
     let isMounted = true;
+    let initListenerAdded = false;
+    let deinitListenerAdded = false;
+
     const initSdk = async () => {
       try {
         setIsLoading(true);
+        console.log("Initializing Tonstakers SDK for address:", userAddress);
+
         // Initialize with testnet - SDK auto-detects testnet
         const tonStakers = new TonStakers(tonConnectUI);
 
         // Wait for initialization event with timeout
         const initPromise = new Promise<void>((resolve, reject) => {
           const timeout = setTimeout(() => {
-            reject(new Error("SDK initialization timeout"));
+            reject(new Error("SDK initialization timeout after 30 seconds"));
           }, 30000); // 30 second timeout
 
-          tonStakers.addEventListener("initialized", () => {
+          const initHandler = () => {
             clearTimeout(timeout);
-            console.log("Tonstakers SDK initialized");
+            console.log("✅ Tonstakers SDK initialized successfully");
             resolve();
-          });
+          };
+
+          tonStakers.addEventListener("initialized", initHandler);
+          initListenerAdded = true;
         });
 
         // Also handle deinitialization
-        tonStakers.addEventListener("deinitialized", () => {
+        const deinitHandler = () => {
           console.log("Tonstakers SDK deinitialized");
           if (isMounted) {
             setIsInitialized(false);
           }
-        });
+        };
+
+        tonStakers.addEventListener("deinitialized", deinitHandler);
+        deinitListenerAdded = true;
 
         await initPromise;
 
         if (isMounted) {
           setSdk(tonStakers);
           setIsInitialized(true);
+          console.log("SDK ready for operations");
         }
       } catch (error) {
-        console.error("Failed to initialize Tonstakers SDK:", error);
+        console.error("❌ Failed to initialize Tonstakers SDK:", error);
         if (isMounted) {
           setSdk(null);
           setIsInitialized(false);
@@ -122,76 +160,105 @@ export function useTonstakers() {
         }
       }
     };
-  }, [userAddress, tonConnectUI, sdk]);
+  }, [userAddress, tonConnectUI]);
 
   // Fetch all data when SDK is initialized
   const refreshData = useCallback(async () => {
-    if (!sdk || !isInitialized) return;
+    if (!isInitialized) {
+      console.warn("Cannot refresh data: SDK not initialized");
+      return;
+    }
 
     try {
       setIsLoading(true);
 
-      // Fetch balances with individual error handling
-      try {
-        const [balance, staked, available] = await Promise.all([
-          sdk.getBalance().catch(() => "0"),
-          sdk.getStakedBalance().catch(() => "0"),
-          sdk.getAvailableBalance().catch(() => "0"),
-        ]);
+      // Fetch wallet balance directly from blockchain (not from SDK)
+      const walletBalance = await fetchWalletBalance();
+      setTonBalance(walletBalance);
+      console.log("Wallet balance set to:", walletBalance);
 
-        setTonBalance(balance);
-        setStakedBalance(staked);
-        setAvailableBalance(available);
-      } catch (error) {
-        console.warn("Failed to fetch balances:", error);
+      // Fetch staking-specific balances from SDK
+      if (sdk) {
+        try {
+          const [staked, available] = await Promise.all([
+            sdk.getStakedBalance().catch((e) => {
+              console.warn("Failed to get staked balance:", e);
+              return "0";
+            }),
+            sdk.getAvailableBalance().catch((e) => {
+              console.warn("Failed to get available balance:", e);
+              return "0";
+            }),
+          ]);
+
+          setStakedBalance(staked);
+          setAvailableBalance(available);
+          console.log("Staked balance:", staked, "Available:", available);
+        } catch (error) {
+          console.warn("Failed to fetch staking balances:", error);
+        }
       }
 
       // Fetch pool info with individual error handling
-      try {
-        const [poolTvl, stakers, liquidity, apy] = await Promise.all([
-          sdk.getTvl().catch(() => "0"),
-          sdk.getStakersCount().catch(() => 0),
-          sdk.getInstantLiquidity().catch(() => "0"),
-          sdk.getCurrentApy().catch(() => 0),
-        ]);
+      if (sdk) {
+        try {
+          const [poolTvl, stakers, liquidity, apy] = await Promise.all([
+            sdk.getTvl().catch((e) => {
+              console.warn("Failed to get TVL:", e);
+              return "0";
+            }),
+            sdk.getStakersCount().catch((e) => {
+              console.warn("Failed to get stakers count:", e);
+              return 0;
+            }),
+            sdk.getInstantLiquidity().catch((e) => {
+              console.warn("Failed to get instant liquidity:", e);
+              return "0";
+            }),
+            sdk.getCurrentApy().catch((e) => {
+              console.warn("Failed to get APY:", e);
+              return 0;
+            }),
+          ]);
 
-        setTvl(poolTvl);
-        setStakersCount(stakers);
-        setInstantLiquidity(liquidity);
-        setCurrentApy(apy);
-      } catch (error) {
-        console.warn("Failed to fetch pool info:", error);
-      }
+          setTvl(poolTvl);
+          setStakersCount(stakers);
+          setInstantLiquidity(liquidity);
+          setCurrentApy(apy);
+        } catch (error) {
+          console.warn("Failed to fetch pool info:", error);
+        }
 
-      // Fetch rates with error handling
-      try {
-        const ratesData = await sdk.getRates();
-        setRates(ratesData);
-      } catch (error) {
-        console.warn("Failed to fetch rates:", error);
-      }
+        // Fetch rates with error handling
+        try {
+          const ratesData = await sdk.getRates();
+          setRates(ratesData);
+        } catch (error) {
+          console.warn("Failed to fetch rates:", error);
+        }
 
-      // Fetch withdrawal NFTs with error handling
-      try {
-        const nfts = await sdk.getActiveWithdrawalNFTs();
-        setWithdrawalNFTs(nfts);
-      } catch (error) {
-        console.warn("Failed to fetch withdrawal NFTs:", error);
-      }
+        // Fetch withdrawal NFTs with error handling
+        try {
+          const nfts = await sdk.getActiveWithdrawalNFTs();
+          setWithdrawalNFTs(nfts);
+        } catch (error) {
+          console.warn("Failed to fetch withdrawal NFTs:", error);
+        }
 
-      // Fetch round timestamps with error handling
-      try {
-        const timestamps = await sdk.getRoundTimestamps();
-        setRoundTimestamps(timestamps);
-      } catch (error) {
-        console.warn("Failed to fetch round timestamps:", error);
+        // Fetch round timestamps with error handling
+        try {
+          const timestamps = await sdk.getRoundTimestamps();
+          setRoundTimestamps(timestamps);
+        } catch (error) {
+          console.warn("Failed to fetch round timestamps:", error);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch Tonstakers data:", error);
     } finally {
       setIsLoading(false);
     }
-  }, [sdk, isInitialized]);
+  }, [sdk, isInitialized, fetchWalletBalance]);
 
   // Auto-refresh data when initialized
   useEffect(() => {
@@ -199,6 +266,17 @@ export function useTonstakers() {
       refreshData();
     }
   }, [isInitialized, refreshData]);
+
+  // Fetch wallet balance even if SDK not initialized (fallback)
+  useEffect(() => {
+    if (userAddress && !isInitialized && !isLoading) {
+      console.log("SDK not initialized, fetching wallet balance only...");
+      fetchWalletBalance().then((balance) => {
+        setTonBalance(balance);
+        console.log("Fallback wallet balance:", balance);
+      });
+    }
+  }, [userAddress, isInitialized, isLoading, fetchWalletBalance]);
 
   // Staking operations
   const stake = useCallback(
