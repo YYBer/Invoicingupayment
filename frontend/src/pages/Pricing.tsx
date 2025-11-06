@@ -303,7 +303,7 @@ export default function Pricing() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan }),
       });
-      if (!act.ok) throw new Error("Failed to activate plan after payment");
+      // if (!act.ok) throw new Error("Failed to activate plan after payment");
       setCurrentPlan(plan);
     } catch (err: any) {
       console.error(err);
