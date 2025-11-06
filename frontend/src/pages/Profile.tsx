@@ -6,9 +6,67 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Header from "@/components/Header";
-import { useTonstakers } from "@/hooks/useTonstakers";
+// import { useTonstakers } from "@/hooks/useTonstakers"; // REMOVED
 import { toast } from "sonner";
 import { TrendingUp, Users, Wallet, Clock } from "lucide-react";
+
+// --- MOCK DATA/TYPES FOR STANING (REPLACING TONSTAKERS SDK) ---
+
+// Mock data structure for Tonstakers rates/balances
+const MOCK_TONSTAKERS_DATA = {
+  isConnected: true,
+  isInitialized: true,
+  isLoading: false,
+
+  // Mock Balances (in nanoton)
+  tonBalance: "100500000000",
+  availableBalance: "99000000000",
+  stakedBalance: "50000000000",
+  instantLiquidity: "5000000000000", // 5000 TON
+
+  // Mock Rates/Stats
+  rates: {
+    TONUSD: 2.5,
+    tsTONTON: 1.061,
+    tsTONTONProjected: 1.0615,
+  },
+  currentApy: 5.25,
+  tvl: "12345678900000000", // 12,345,678.9 TON
+  stakersCount: 9876,
+
+  // Mock Withdrawal NFTs
+  withdrawalNFTs: [
+    {
+      amount: "1000000000", // 1 tsTON
+      estimatedPayoutDate: new Date(Date.now() + 86400000 * 7), // 7 days from now
+      roundEndTime: new Date(Date.now() + 86400000 * 5), // 5 days from now
+      address: "EQCD39VS5bxFasf-F90qj_N9lT1w0wI7y6j0Q1H7BvJ9GvWl",
+    },
+    {
+      amount: "5000000000", // 5 tsTON
+      estimatedPayoutDate: new Date(Date.now() + 86400000 * 14), // 14 days from now
+      roundEndTime: new Date(Date.now() + 86400000 * 12), // 12 days from now
+      address: "EQASJ6qD-I8T9G-T0b8D-k7sA2J-S0i1Y5X1z4L3h2E1c0B",
+    },
+  ],
+};
+
+// Mock functions to prevent runtime errors
+const mockStake = async (amount: string) => { console.log("MOCK: Staking", amount); await new Promise(resolve => setTimeout(resolve, 1000)); };
+const mockStakeMax = async () => { console.log("MOCK: Staking Max"); await new Promise(resolve => setTimeout(resolve, 1000)); };
+const mockUnstake = async (amount: string) => { console.log("MOCK: Regular Unstake", amount); await new Promise(resolve => setTimeout(resolve, 1000)); };
+const mockUnstakeInstant = async (amount: string) => { console.log("MOCK: Instant Unstake", amount); await new Promise(resolve => setTimeout(resolve, 1000)); };
+const mockUnstakeBestRate = async (amount: string) => { console.log("MOCK: Best Rate Unstake", amount); await new Promise(resolve => setTimeout(resolve, 1000)); };
+
+const mockTonstakers = {
+    ...MOCK_TONSTAKERS_DATA,
+    stake: mockStake,
+    stakeMax: mockStakeMax,
+    unstake: mockUnstake,
+    unstakeInstant: mockUnstakeInstant,
+    unstakeBestRate: mockUnstakeBestRate,
+};
+// --- END MOCK DATA ---
 
 type PlanName = "Free" | "Smart";
 type SubStatus = "active" | "trialing" | "past_due" | "canceled" | "incomplete" | "incomplete_expired" | "unpaid" | "none";
@@ -68,18 +126,29 @@ function formatTON(amount: string): string {
 }
 
 export default function Profile() {
-  const [sub, setSub] = useState<SubscriptionResponse | null>(null);
-  const [usage, setUsage] = useState<UsageResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [sub, setSub] = useState<SubscriptionResponse | null>({ plan: "Free", status: "none", current_period_start: new Date().toISOString(), current_period_end: new Date(Date.now() + 86400000 * 30).toISOString() }); // MOCK: Default to Free plan
+  const [usage, setUsage] = useState<UsageResponse | null>({
+    customers_added: 3,
+    services_added: 1,
+    invoices_created: 2,
+    invoices_updated: 4,
+    emails_sent: 1,
+    downloads: 0,
+  }); // MOCK: Mock usage data
+  const [loading, setLoading] = useState(false); // MOCK: Set to false to show UI immediately
   const [portalLoading, setPortalLoading] = useState(false);
 
-  const tonstakers = useTonstakers();
+  // const tonstakers = useTonstakers(); // REMOVED
+  const tonstakers = mockTonstakers; // MOCK: Use mock data
+
   const [stakeAmount, setStakeAmount] = useState("");
   const [unstakeAmount, setUnstakeAmount] = useState("");
   const [stakeLoading, setStakeLoading] = useState(false);
   const [unstakeLoading, setUnstakeLoading] = useState(false);
 
   useEffect(() => {
+    // Retain API calls but set loading to false in finally block to ensure UI shows
+    // The state is pre-mocked above, so this block primarily simulates the *end* of loading.
     (async () => {
       try {
         const [subRes, usageRes] = await Promise.all([
@@ -112,14 +181,13 @@ export default function Profile() {
           }
         }
 
-        setSub(subJson);
-        setUsage(usageJson);
+        // Only update if fetch was successful, otherwise rely on mock/initial state
+        if(subJson.plan) setSub(subJson);
+        if(Object.keys(usageJson).length > 0) setUsage(usageJson);
       } catch (e) {
         console.error("Error fetching subscription data:", e);
-        setSub({ plan: null, status: "none" });
-        setUsage({});
       } finally {
-        setLoading(false);
+        setLoading(false); // Ensure loading is false to render UI
       }
     })();
   }, []);
@@ -151,23 +219,17 @@ export default function Profile() {
     try {
       setPortalLoading(true);
       if (effectivePlan === "Free") {
-        const res = await fetch("/api/billing/checkout-session", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ plan: "Smart" }),
-        });
-        if (!res.ok) throw new Error("Failed to start checkout");
-        const { checkoutUrl } = await res.json();
-        window.location.href = checkoutUrl;
+        // MOCK: Replace fetch with toast for demonstration
+        toast.info("MOCK: Redirecting to Smart plan checkout...");
+        // const res = await fetch("/api/billing/checkout-session", { ... });
+        // const { checkoutUrl } = await res.json();
+        // window.location.href = checkoutUrl;
       } else {
-        const res = await fetch("/api/billing/portal-session", {
-          method: "POST",
-          credentials: "include",
-        });
-        if (!res.ok) throw new Error("Failed to open portal");
-        const { url } = await res.json();
-        window.location.href = url;
+        // MOCK: Replace fetch with toast for demonstration
+        toast.info("MOCK: Redirecting to Stripe Customer Portal...");
+        // const res = await fetch("/api/billing/portal-session", { ... });
+        // const { url } = await res.json();
+        // window.location.href = url;
       }
     } catch (e) {
       console.error(e);
@@ -177,17 +239,9 @@ export default function Profile() {
     }
   };
 
+  // --- STAKING HANDLERS (UPDATED TO USE MOCK) ---
   const handleStake = async () => {
-    if (!tonstakers.isConnected) {
-      toast.error("Please connect your wallet first");
-      return;
-    }
-
-    if (!tonstakers.isInitialized) {
-      toast.error("Tonstakers SDK is initializing. Please wait.");
-      return;
-    }
-
+    // Removed connection/initialization checks
     if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -197,7 +251,7 @@ export default function Profile() {
       setStakeLoading(true);
       const amountInNano = (parseFloat(stakeAmount) * 1e9).toString();
       await tonstakers.stake(amountInNano);
-      toast.success("Staking transaction sent!");
+      toast.success("MOCK: Staking transaction sent!");
       setStakeAmount("");
     } catch (error) {
       console.error(error);
@@ -209,20 +263,11 @@ export default function Profile() {
   };
 
   const handleStakeMax = async () => {
-    if (!tonstakers.isConnected) {
-      toast.error("Please connect your wallet first");
-      return;
-    }
-
-    if (!tonstakers.isInitialized) {
-      toast.error("Tonstakers SDK is initializing. Please wait.");
-      return;
-    }
-
+    // Removed connection/initialization checks
     try {
       setStakeLoading(true);
       await tonstakers.stakeMax();
-      toast.success("Max staking transaction sent!");
+      toast.success("MOCK: Max staking transaction sent!");
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Staking failed";
@@ -233,16 +278,7 @@ export default function Profile() {
   };
 
   const handleUnstake = async (type: "regular" | "instant" | "bestRate") => {
-    if (!tonstakers.isConnected) {
-      toast.error("Please connect your wallet first");
-      return;
-    }
-
-    if (!tonstakers.isInitialized) {
-      toast.error("Tonstakers SDK is initializing. Please wait.");
-      return;
-    }
-
+    // Removed connection/initialization checks
     if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -255,15 +291,15 @@ export default function Profile() {
       switch (type) {
         case "regular":
           await tonstakers.unstake(amountInNano);
-          toast.success("Withdrawal request submitted!", { duration: 5000 });
+          toast.success("MOCK: Withdrawal request submitted!", { duration: 5000 });
           break;
         case "instant":
           await tonstakers.unstakeInstant(amountInNano);
-          toast.success("Instant withdrawal sent!");
+          toast.success("MOCK: Instant withdrawal sent!");
           break;
         case "bestRate":
           await tonstakers.unstakeBestRate(amountInNano);
-          toast.success("Best rate withdrawal sent!");
+          toast.success("MOCK: Best rate withdrawal sent!");
           break;
       }
 
@@ -276,6 +312,7 @@ export default function Profile() {
       setUnstakeLoading(false);
     }
   };
+  // --- END STAKING HANDLERS ---
 
   return (
     <div className="min-h-screen bg-background">
@@ -284,6 +321,7 @@ export default function Profile() {
       <main className="container mx-auto px-4 py-12">
         <h1 className="mb-8 text-4xl font-bold text-foreground">My Profile</h1>
 
+        {/* Subscription Plan Card */}
         <Card className="mb-8 p-8">
           <h2 className="mb-6 text-2xl font-bold text-foreground">Subscription Plan</h2>
           {loading ? (
@@ -346,218 +384,203 @@ export default function Profile() {
           )}
         </Card>
 
+        {/* TON Staking Card - Simplified to render immediately */}
         <Card className="mb-8 p-8">
           <h2 className="mb-6 text-2xl font-bold text-foreground">TON Staking (Testnet)</h2>
 
-          {!tonstakers.isConnected ? (
-            <div className="rounded-lg border border-border bg-muted/50 p-8 text-center">
-              <Wallet className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-              <p className="mb-4 text-lg font-medium text-foreground">Connect your wallet to start staking</p>
-              <p className="text-sm text-muted-foreground">
-                Click the "Connect Wallet" button in the header to connect your TonKeeper wallet on TESTNET
-              </p>
-            </div>
-          ) : !tonstakers.isInitialized ? (
-            <div className="rounded-lg border border-border bg-muted/50 p-8 text-center">
-              <Clock className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
-              <p className="mb-4 text-lg font-medium text-foreground">Initializing Tonstakers SDK...</p>
-              <p className="text-sm text-muted-foreground">This may take up to 30 seconds</p>
-            </div>
-          ) : tonstakers.isLoading ? (
-            <p className="text-muted-foreground">Loading staking data…</p>
-          ) : (
-            <Tabs defaultValue="balances" className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="balances">Balances</TabsTrigger>
-                <TabsTrigger value="staking">Staking</TabsTrigger>
-                <TabsTrigger value="withdrawal">Withdrawal</TabsTrigger>
-              </TabsList>
+          {/* This Tabs component is now rendered unconditionally, simulating connected/initialized state */}
+          <Tabs defaultValue="balances" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="balances">Balances</TabsTrigger>
+              <TabsTrigger value="staking">Staking</TabsTrigger>
+              <TabsTrigger value="withdrawal">Withdrawal</TabsTrigger>
+            </TabsList>
 
-              <TabsContent value="balances" className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-2">
-                  <Card className="p-6">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Wallet className="h-5 w-5 text-primary" />
-                      <h3 className="text-lg font-semibold text-foreground">TON Balance</h3>
-                    </div>
-                    <p className="text-3xl font-bold text-foreground">{formatTON(tonstakers.tonBalance)} TON</p>
-                    <p className="mt-2 text-sm text-muted-foreground">Available: {formatTON(tonstakers.availableBalance)} TON</p>
-                  </Card>
+            <TabsContent value="balances" className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card className="p-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">TON Balance</h3>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{formatTON(tonstakers.tonBalance)} TON</p>
+                  <p className="mt-2 text-sm text-muted-foreground">Available: {formatTON(tonstakers.availableBalance)} TON</p>
+                </Card>
 
-                  <Card className="p-6">
-                    <div className="mb-2 flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-primary" />
-                      <h3 className="text-lg font-semibold text-foreground">Staked Balance (tsTON)</h3>
-                    </div>
-                    <p className="text-3xl font-bold text-foreground">{formatTON(tonstakers.stakedBalance)} tsTON</p>
-                    <p className="mt-2 text-sm text-muted-foreground">
-                      ≈ {(parseFloat(formatTON(tonstakers.stakedBalance)) * tonstakers.rates.tsTONTON).toFixed(2)} TON
+                <Card className="p-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    <h3 className="text-lg font-semibold text-foreground">Staked Balance (tsTON)</h3>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{formatTON(tonstakers.stakedBalance)} tsTON</p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    ≈ {(parseFloat(formatTON(tonstakers.stakedBalance)) * tonstakers.rates.tsTONTON).toFixed(2)} TON
+                  </p>
+                </Card>
+              </div>
+
+              <Card className="p-6">
+                <h3 className="mb-4 text-lg font-semibold text-foreground">Exchange Rates</h3>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div>
+                    <p className="text-sm text-muted-foreground">TON/USD</p>
+                    <p className="text-2xl font-bold text-foreground">${tonstakers.rates.TONUSD.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">tsTON/TON (Current)</p>
+                    <p className="text-2xl font-bold text-foreground">{tonstakers.rates.tsTONTON.toFixed(6)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">tsTON/TON (Projected)</p>
+                    <p className="text-2xl font-bold text-foreground">{tonstakers.rates.tsTONTONProjected.toFixed(6)}</p>
+                  </div>
+                </div>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="staking" className="space-y-6">
+              <div className="grid gap-6 md:grid-cols-3">
+                <Card className="p-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-primary" />
+                    <h3 className="text-sm font-medium text-muted-foreground">Current APY</h3>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{tonstakers.currentApy.toFixed(2)}%</p>
+                </Card>
+
+                <Card className="p-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-primary" />
+                    <h3 className="text-sm font-medium text-muted-foreground">Total Value Locked</h3>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{formatTON(tonstakers.tvl)} TON</p>
+                </Card>
+
+                <Card className="p-6">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    <h3 className="text-sm font-medium text-muted-foreground">Total Stakers</h3>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{tonstakers.stakersCount.toLocaleString()}</p>
+                </Card>
+              </div>
+
+              <Card className="p-6">
+                <h3 className="mb-4 text-lg font-semibold text-foreground">Stake TON</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="stake-amount">Amount (TON)</Label>
+                    <Input
+                      id="stake-amount"
+                      type="number"
+                      placeholder="Enter amount to stake"
+                      value={stakeAmount}
+                      onChange={(e) => setStakeAmount(e.target.value)}
+                      min="0"
+                      step="0.01"
+                    />
+                    <p className="mt-1 text-sm text-muted-foreground">Available: {formatTON(tonstakers.availableBalance)} TON</p>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button onClick={handleStake} disabled={stakeLoading || !stakeAmount} className="flex-1">
+                      {stakeLoading ? "Processing…" : "Stake"}
+                    </Button>
+                    <Button onClick={handleStakeMax} disabled={stakeLoading} variant="outline">
+                      Stake Max
+                    </Button>
+                  </div>
+                </div>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="withdrawal" className="space-y-6">
+              <Card className="p-6">
+                <h3 className="mb-4 text-lg font-semibold text-foreground">Withdraw tsTON</h3>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="unstake-amount">Amount (tsTON)</Label>
+                    <Input
+                      id="unstake-amount"
+                      type="number"
+                      placeholder="Enter amount to withdraw"
+                      value={unstakeAmount}
+                      onChange={(e) => setUnstakeAmount(e.target.value)}
+                      min="0"
+                      step="0.01"
+                    />
+                    <p className="mt-1 text-sm text-muted-foreground">Staked: {formatTON(tonstakers.stakedBalance)} tsTON</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    <Button
+                      onClick={() => handleUnstake("regular")}
+                      disabled={unstakeLoading || !unstakeAmount}
+                      className="w-full"
+                    >
+                      {unstakeLoading ? "Processing…" : "Regular Unstake (Delayed, Best Rate)"}
+                    </Button>
+
+                    <Button
+                      onClick={() => handleUnstake("instant")}
+                      disabled={unstakeLoading || !unstakeAmount}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      Instant Unstake (Uses Liquidity Pool)
+                    </Button>
+
+                    <Button
+                      onClick={() => handleUnstake("bestRate")}
+                      disabled={unstakeLoading || !unstakeAmount}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      Best Rate Unstake (Wait Till Round End)
+                    </Button>
+
+                    <p className="text-sm text-muted-foreground">
+                      Available instant liquidity: {formatTON(tonstakers.instantLiquidity)} TON
                     </p>
-                  </Card>
+                  </div>
                 </div>
+              </Card>
 
-                <Card className="p-6">
-                  <h3 className="mb-4 text-lg font-semibold text-foreground">Exchange Rates</h3>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div>
-                      <p className="text-sm text-muted-foreground">TON/USD</p>
-                      <p className="text-2xl font-bold text-foreground">${tonstakers.rates.TONUSD.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">tsTON/TON (Current)</p>
-                      <p className="text-2xl font-bold text-foreground">{tonstakers.rates.tsTONTON.toFixed(6)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">tsTON/TON (Projected)</p>
-                      <p className="text-2xl font-bold text-foreground">{tonstakers.rates.tsTONTONProjected.toFixed(6)}</p>
-                    </div>
-                  </div>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="staking" className="space-y-6">
-                <div className="grid gap-6 md:grid-cols-3">
-                  <Card className="p-6">
-                    <div className="mb-2 flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5 text-primary" />
-                      <h3 className="text-sm font-medium text-muted-foreground">Current APY</h3>
-                    </div>
-                    <p className="text-3xl font-bold text-foreground">{tonstakers.currentApy.toFixed(2)}%</p>
-                  </Card>
-
-                  <Card className="p-6">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Wallet className="h-5 w-5 text-primary" />
-                      <h3 className="text-sm font-medium text-muted-foreground">Total Value Locked</h3>
-                    </div>
-                    <p className="text-3xl font-bold text-foreground">{formatTON(tonstakers.tvl)} TON</p>
-                  </Card>
-
-                  <Card className="p-6">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Users className="h-5 w-5 text-primary" />
-                      <h3 className="text-sm font-medium text-muted-foreground">Total Stakers</h3>
-                    </div>
-                    <p className="text-3xl font-bold text-foreground">{tonstakers.stakersCount.toLocaleString()}</p>
-                  </Card>
-                </div>
-
-                <Card className="p-6">
-                  <h3 className="mb-4 text-lg font-semibold text-foreground">Stake TON</h3>
+              <Card className="p-6">
+                <h3 className="mb-4 text-lg font-semibold text-foreground">My Withdrawals</h3>
+                {tonstakers.withdrawalNFTs.length === 0 ? (
+                  <p className="text-center text-muted-foreground">No active withdrawal requests</p>
+                ) : (
                   <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="stake-amount">Amount (TON)</Label>
-                      <Input
-                        id="stake-amount"
-                        type="number"
-                        placeholder="Enter amount to stake"
-                        value={stakeAmount}
-                        onChange={(e) => setStakeAmount(e.target.value)}
-                        min="0"
-                        step="0.01"
-                      />
-                      <p className="mt-1 text-sm text-muted-foreground">Available: {formatTON(tonstakers.availableBalance)} TON</p>
-                    </div>
-
-                    <div className="flex gap-3">
-                      <Button onClick={handleStake} disabled={stakeLoading || !stakeAmount || !tonstakers.isInitialized} className="flex-1">
-                        {stakeLoading ? "Processing…" : !tonstakers.isInitialized ? "Initializing..." : "Stake"}
-                      </Button>
-                      <Button onClick={handleStakeMax} disabled={stakeLoading || !tonstakers.isInitialized} variant="outline">
-                        {!tonstakers.isInitialized ? "Initializing..." : "Stake Max"}
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="withdrawal" className="space-y-6">
-                <Card className="p-6">
-                  <h3 className="mb-4 text-lg font-semibold text-foreground">Withdraw tsTON</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="unstake-amount">Amount (tsTON)</Label>
-                      <Input
-                        id="unstake-amount"
-                        type="number"
-                        placeholder="Enter amount to withdraw"
-                        value={unstakeAmount}
-                        onChange={(e) => setUnstakeAmount(e.target.value)}
-                        min="0"
-                        step="0.01"
-                      />
-                      <p className="mt-1 text-sm text-muted-foreground">Staked: {formatTON(tonstakers.stakedBalance)} tsTON</p>
-                    </div>
-
-                    <div className="space-y-3">
-                      <Button
-                        onClick={() => handleUnstake("regular")}
-                        disabled={unstakeLoading || !unstakeAmount || !tonstakers.isInitialized}
-                        className="w-full"
-                      >
-                        {unstakeLoading ? "Processing…" : !tonstakers.isInitialized ? "Initializing..." : "Regular Unstake (Delayed, Best Rate)"}
-                      </Button>
-
-                      <Button
-                        onClick={() => handleUnstake("instant")}
-                        disabled={unstakeLoading || !unstakeAmount || !tonstakers.isInitialized}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        {!tonstakers.isInitialized ? "Initializing..." : "Instant Unstake (Uses Liquidity Pool)"}
-                      </Button>
-
-                      <Button
-                        onClick={() => handleUnstake("bestRate")}
-                        disabled={unstakeLoading || !unstakeAmount || !tonstakers.isInitialized}
-                        variant="outline"
-                        className="w-full"
-                      >
-                        {!tonstakers.isInitialized ? "Initializing..." : "Best Rate Unstake (Wait Till Round End)"}
-                      </Button>
-
-                      <p className="text-sm text-muted-foreground">
-                        Available instant liquidity: {formatTON(tonstakers.instantLiquidity)} TON
-                      </p>
-                    </div>
-                  </div>
-                </Card>
-
-                <Card className="p-6">
-                  <h3 className="mb-4 text-lg font-semibold text-foreground">My Withdrawals</h3>
-                  {tonstakers.withdrawalNFTs.length === 0 ? (
-                    <p className="text-center text-muted-foreground">No active withdrawal requests</p>
-                  ) : (
-                    <div className="space-y-4">
-                      {tonstakers.withdrawalNFTs.map((nft, index) => (
-                        <Card key={index} className="border p-4">
-                          <div className="grid gap-2 md:grid-cols-3">
-                            <div>
-                              <p className="text-sm text-muted-foreground">Amount</p>
-                              <p className="text-lg font-semibold text-foreground">{formatTON(nft.amount)} tsTON</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Estimated Payout</p>
-                              <p className="text-sm font-medium text-foreground">{nft.estimatedPayoutDate.toLocaleDateString()}</p>
-                            </div>
-                            <div>
-                              <p className="text-sm text-muted-foreground">Round Ends</p>
-                              <p className="text-sm font-medium text-foreground">{nft.roundEndTime.toLocaleDateString()}</p>
-                            </div>
+                    {tonstakers.withdrawalNFTs.map((nft, index) => (
+                      <Card key={index} className="border p-4">
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <div>
+                            <p className="text-sm text-muted-foreground">Amount</p>
+                            <p className="text-lg font-semibold text-foreground">{formatTON(nft.amount)} tsTON</p>
                           </div>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            NFT: {nft.address.slice(0, 8)}...{nft.address.slice(-6)}
-                          </p>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              </TabsContent>
-            </Tabs>
-          )}
+                          <div>
+                            <p className="text-sm text-muted-foreground">Estimated Payout</p>
+                            <p className="text-sm font-medium text-foreground">{nft.estimatedPayoutDate.toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-muted-foreground">Round Ends</p>
+                            <p className="text-sm font-medium text-foreground">{nft.roundEndTime.toLocaleDateString()}</p>
+                          </div>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          NFT: {nft.address.slice(0, 8)}...{nft.address.slice(-6)}
+                        </p>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </TabsContent>
+          </Tabs>
         </Card>
 
+        {/* Company Logo Card */}
         <Card className="p-8">
           <h2 className="text-xl font-bold text-foreground">Company Logo</h2>
         </Card>

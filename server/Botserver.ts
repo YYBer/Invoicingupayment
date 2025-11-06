@@ -35,7 +35,7 @@ bot.on('polling_error', (error: Error) => {
 // Optional: Handle /start command for better UX
 bot.onText(/\/start/, (msg: Message) => {
   const chatId = msg.chat.id;
-  bot.sendMessage(chatId, 'Welcome! Use /app to get the Invoicingu link.');
+  bot.sendMessage(chatId, 'Welcome to Invoicingu! Use /app to open the application.');
 });
 
 console.log('Bot is running. Waiting for messages...');
