@@ -1,9 +1,11 @@
+import { Buffer } from "buffer";
+window.Buffer = Buffer;
+
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 import { TonConnectUIProvider } from "@tonconnect/ui-react";
 
-// IMPORTANT: use your Vercel URL
 const manifestUrl =
   "https://invoicingupayment-ton.vercel.app/.well-known/tonconnect-manifest.json";
 
