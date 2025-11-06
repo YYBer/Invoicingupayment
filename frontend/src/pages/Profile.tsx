@@ -94,18 +94,40 @@ export default function Profile() {
     (async () => {
       try {
         const [subRes, usageRes] = await Promise.all([
-          fetch("/api/billing/subscription", { credentials: "include" }),
-          fetch("/api/usage/current", { credentials: "include" }),
+          fetch("/api/billing/subscription", { credentials: "include" }).catch(() => null),
+          fetch("/api/usage/current", { credentials: "include" }).catch(() => null),
         ]);
-        const subJson: SubscriptionResponse = subRes.ok
-          ? await subRes.json()
-          : { plan: null, status: "none" };
-        const usageJson: UsageResponse = usageRes.ok ? await usageRes.json() : {};
+
+        let subJson: SubscriptionResponse = { plan: null, status: "none" };
+        let usageJson: UsageResponse = {};
+
+        // Only parse JSON if we got a valid response
+        if (subRes && subRes.ok) {
+          const contentType = subRes.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              subJson = await subRes.json();
+            } catch (e) {
+              console.warn("Failed to parse subscription response:", e);
+            }
+          }
+        }
+
+        if (usageRes && usageRes.ok) {
+          const contentType = usageRes.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            try {
+              usageJson = await usageRes.json();
+            } catch (e) {
+              console.warn("Failed to parse usage response:", e);
+            }
+          }
+        }
 
         setSub(subJson);
         setUsage(usageJson);
       } catch (e) {
-        console.error(e);
+        console.error("Error fetching subscription data:", e);
         setSub({ plan: null, status: "none" });
         setUsage({});
       } finally {
@@ -171,6 +193,11 @@ export default function Profile() {
 
   // Handle staking
   const handleStake = async () => {
+    if (!tonstakers.isConnected) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
     if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -184,20 +211,27 @@ export default function Profile() {
       setStakeAmount("");
     } catch (error) {
       console.error(error);
-      toast.error("Staking failed. Please try again.");
+      const message = error instanceof Error ? error.message : "Staking failed. Please try again.";
+      toast.error(message);
     } finally {
       setStakeLoading(false);
     }
   };
 
   const handleStakeMax = async () => {
+    if (!tonstakers.isConnected) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
     try {
       setStakeLoading(true);
       await tonstakers.stakeMax();
       toast.success("Max staking transaction sent successfully!");
     } catch (error) {
       console.error(error);
-      toast.error("Staking failed. Please try again.");
+      const message = error instanceof Error ? error.message : "Staking failed. Please try again.";
+      toast.error(message);
     } finally {
       setStakeLoading(false);
     }
@@ -205,6 +239,11 @@ export default function Profile() {
 
   // Handle unstaking
   const handleUnstake = async (type: "regular" | "instant" | "bestRate") => {
+    if (!tonstakers.isConnected) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+
     if (!unstakeAmount || parseFloat(unstakeAmount) <= 0) {
       toast.error("Please enter a valid amount");
       return;
@@ -218,23 +257,25 @@ export default function Profile() {
         case "regular":
           await tonstakers.unstake(amountInNano);
           toast.success(
-            "Withdrawal request submitted! Your withdrawal NFT has been generated. Please check 'My Withdrawals' for the estimated payout time."
+            "Withdrawal request submitted! Your withdrawal NFT has been generated. Please check 'My Withdrawals' for the estimated payout time.",
+            { duration: 5000 }
           );
           break;
         case "instant":
           await tonstakers.unstakeInstant(amountInNano);
-          toast.success("Instant unstake transaction sent!");
+          toast.success("Instant withdrawal transaction sent!");
           break;
         case "bestRate":
           await tonstakers.unstakeBestRate(amountInNano);
-          toast.success("Best rate unstake transaction sent!");
+          toast.success("Best rate withdrawal transaction sent!");
           break;
       }
 
       setUnstakeAmount("");
     } catch (error) {
       console.error(error);
-      toast.error("Withdrawal failed. Please try again.");
+      const message = error instanceof Error ? error.message : "Withdrawal failed. Please try again.";
+      toast.error(message);
     } finally {
       setUnstakeLoading(false);
     }

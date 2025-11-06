@@ -62,15 +62,21 @@ export function useTonstakers() {
       return;
     }
 
+    let isMounted = true;
     const initSdk = async () => {
       try {
         setIsLoading(true);
         // Initialize with testnet - SDK auto-detects testnet
         const tonStakers = new TonStakers(tonConnectUI);
 
-        // Wait for initialization event
-        const initPromise = new Promise<void>((resolve) => {
+        // Wait for initialization event with timeout
+        const initPromise = new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("SDK initialization timeout"));
+          }, 30000); // 30 second timeout
+
           tonStakers.addEventListener("initialized", () => {
+            clearTimeout(timeout);
             console.log("Tonstakers SDK initialized");
             resolve();
           });
@@ -79,17 +85,27 @@ export function useTonstakers() {
         // Also handle deinitialization
         tonStakers.addEventListener("deinitialized", () => {
           console.log("Tonstakers SDK deinitialized");
-          setIsInitialized(false);
+          if (isMounted) {
+            setIsInitialized(false);
+          }
         });
 
         await initPromise;
 
-        setSdk(tonStakers);
-        setIsInitialized(true);
+        if (isMounted) {
+          setSdk(tonStakers);
+          setIsInitialized(true);
+        }
       } catch (error) {
         console.error("Failed to initialize Tonstakers SDK:", error);
+        if (isMounted) {
+          setSdk(null);
+          setIsInitialized(false);
+        }
       } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
@@ -97,11 +113,16 @@ export function useTonstakers() {
 
     // Cleanup on disconnect
     return () => {
+      isMounted = false;
       if (sdk) {
-        sdk.clearStorageUserData();
+        try {
+          sdk.clearStorageUserData();
+        } catch (error) {
+          console.warn("Error clearing storage data:", error);
+        }
       }
     };
-  }, [userAddress, tonConnectUI]);
+  }, [userAddress, tonConnectUI, sdk]);
 
   // Fetch all data when SDK is initialized
   const refreshData = useCallback(async () => {
@@ -110,41 +131,61 @@ export function useTonstakers() {
     try {
       setIsLoading(true);
 
-      // Fetch balances
-      const [balance, staked, available] = await Promise.all([
-        sdk.getBalance(),
-        sdk.getStakedBalance(),
-        sdk.getAvailableBalance(),
-      ]);
+      // Fetch balances with individual error handling
+      try {
+        const [balance, staked, available] = await Promise.all([
+          sdk.getBalance().catch(() => "0"),
+          sdk.getStakedBalance().catch(() => "0"),
+          sdk.getAvailableBalance().catch(() => "0"),
+        ]);
 
-      setTonBalance(balance);
-      setStakedBalance(staked);
-      setAvailableBalance(available);
+        setTonBalance(balance);
+        setStakedBalance(staked);
+        setAvailableBalance(available);
+      } catch (error) {
+        console.warn("Failed to fetch balances:", error);
+      }
 
-      // Fetch pool info
-      const [poolTvl, stakers, liquidity, apy] = await Promise.all([
-        sdk.getTvl(),
-        sdk.getStakersCount(),
-        sdk.getInstantLiquidity(),
-        sdk.getCurrentApy(),
-      ]);
+      // Fetch pool info with individual error handling
+      try {
+        const [poolTvl, stakers, liquidity, apy] = await Promise.all([
+          sdk.getTvl().catch(() => "0"),
+          sdk.getStakersCount().catch(() => 0),
+          sdk.getInstantLiquidity().catch(() => "0"),
+          sdk.getCurrentApy().catch(() => 0),
+        ]);
 
-      setTvl(poolTvl);
-      setStakersCount(stakers);
-      setInstantLiquidity(liquidity);
-      setCurrentApy(apy);
+        setTvl(poolTvl);
+        setStakersCount(stakers);
+        setInstantLiquidity(liquidity);
+        setCurrentApy(apy);
+      } catch (error) {
+        console.warn("Failed to fetch pool info:", error);
+      }
 
-      // Fetch rates
-      const ratesData = await sdk.getRates();
-      setRates(ratesData);
+      // Fetch rates with error handling
+      try {
+        const ratesData = await sdk.getRates();
+        setRates(ratesData);
+      } catch (error) {
+        console.warn("Failed to fetch rates:", error);
+      }
 
-      // Fetch withdrawal NFTs
-      const nfts = await sdk.getActiveWithdrawalNFTs();
-      setWithdrawalNFTs(nfts);
+      // Fetch withdrawal NFTs with error handling
+      try {
+        const nfts = await sdk.getActiveWithdrawalNFTs();
+        setWithdrawalNFTs(nfts);
+      } catch (error) {
+        console.warn("Failed to fetch withdrawal NFTs:", error);
+      }
 
-      // Fetch round timestamps
-      const timestamps = await sdk.getRoundTimestamps();
-      setRoundTimestamps(timestamps);
+      // Fetch round timestamps with error handling
+      try {
+        const timestamps = await sdk.getRoundTimestamps();
+        setRoundTimestamps(timestamps);
+      } catch (error) {
+        console.warn("Failed to fetch round timestamps:", error);
+      }
     } catch (error) {
       console.error("Failed to fetch Tonstakers data:", error);
     } finally {
@@ -162,85 +203,145 @@ export function useTonstakers() {
   // Staking operations
   const stake = useCallback(
     async (amount: string) => {
-      if (!sdk) throw new Error("SDK not initialized");
+      if (!sdk || !isInitialized) {
+        throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+      }
 
       try {
         const tx = await sdk.stake(amount);
+        if (!tx) {
+          throw new Error("Failed to prepare staking transaction");
+        }
         await tonConnectUI.sendTransaction(tx);
-        await refreshData();
+        // Wait a bit before refreshing to ensure blockchain updates
+        setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {
         console.error("Stake failed:", error);
-        throw error;
+        // Provide more user-friendly error messages
+        if (error instanceof Error) {
+          if (error.message.includes("User rejected")) {
+            throw new Error("Transaction was rejected by user");
+          }
+          throw error;
+        }
+        throw new Error("Staking transaction failed. Please try again.");
       }
     },
-    [sdk, tonConnectUI, refreshData]
+    [sdk, isInitialized, tonConnectUI, refreshData]
   );
 
   const stakeMax = useCallback(async () => {
-    if (!sdk) throw new Error("SDK not initialized");
+    if (!sdk || !isInitialized) {
+      throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+    }
 
     try {
       const tx = await sdk.stakeMax();
+      if (!tx) {
+        throw new Error("Failed to prepare staking transaction");
+      }
       await tonConnectUI.sendTransaction(tx);
-      await refreshData();
+      setTimeout(() => refreshData(), 2000);
       return true;
     } catch (error) {
       console.error("Stake max failed:", error);
-      throw error;
+      if (error instanceof Error) {
+        if (error.message.includes("User rejected")) {
+          throw new Error("Transaction was rejected by user");
+        }
+        throw error;
+      }
+      throw new Error("Staking transaction failed. Please try again.");
     }
-  }, [sdk, tonConnectUI, refreshData]);
+  }, [sdk, isInitialized, tonConnectUI, refreshData]);
 
   // Unstaking operations
   const unstake = useCallback(
     async (amount: string) => {
-      if (!sdk) throw new Error("SDK not initialized");
+      if (!sdk || !isInitialized) {
+        throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+      }
 
       try {
         const tx = await sdk.unstake(amount);
+        if (!tx) {
+          throw new Error("Failed to prepare withdrawal transaction");
+        }
         await tonConnectUI.sendTransaction(tx);
-        await refreshData();
+        setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {
         console.error("Unstake failed:", error);
-        throw error;
+        if (error instanceof Error) {
+          if (error.message.includes("User rejected")) {
+            throw new Error("Transaction was rejected by user");
+          }
+          throw error;
+        }
+        throw new Error("Withdrawal transaction failed. Please try again.");
       }
     },
-    [sdk, tonConnectUI, refreshData]
+    [sdk, isInitialized, tonConnectUI, refreshData]
   );
 
   const unstakeInstant = useCallback(
     async (amount: string) => {
-      if (!sdk) throw new Error("SDK not initialized");
+      if (!sdk || !isInitialized) {
+        throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+      }
 
       try {
         const tx = await sdk.unstakeInstant(amount);
+        if (!tx) {
+          throw new Error("Failed to prepare instant withdrawal transaction");
+        }
         await tonConnectUI.sendTransaction(tx);
-        await refreshData();
+        setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {
         console.error("Instant unstake failed:", error);
-        throw error;
+        if (error instanceof Error) {
+          if (error.message.includes("User rejected")) {
+            throw new Error("Transaction was rejected by user");
+          }
+          if (error.message.includes("insufficient")) {
+            throw new Error("Insufficient liquidity for instant withdrawal");
+          }
+          throw error;
+        }
+        throw new Error("Instant withdrawal failed. Please try again.");
       }
     },
-    [sdk, tonConnectUI, refreshData]
+    [sdk, isInitialized, tonConnectUI, refreshData]
   );
 
   const unstakeBestRate = useCallback(
     async (amount: string) => {
-      if (!sdk) throw new Error("SDK not initialized");
+      if (!sdk || !isInitialized) {
+        throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+      }
 
       try {
         const tx = await sdk.unstakeBestRate(amount);
+        if (!tx) {
+          throw new Error("Failed to prepare best rate withdrawal transaction");
+        }
         await tonConnectUI.sendTransaction(tx);
-        await refreshData();
+        setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {
         console.error("Best rate unstake failed:", error);
-        throw error;
+        if (error instanceof Error) {
+          if (error.message.includes("User rejected")) {
+            throw new Error("Transaction was rejected by user");
+          }
+          throw error;
+        }
+        throw new Error("Best rate withdrawal failed. Please try again.");
       }
     },
-    [sdk, tonConnectUI, refreshData]
+    [sdk, isInitialized, tonConnectUI, refreshData]
   );
 
   return {
