@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTonConnectUI, useTonAddress, useTonWallet } from "@tonconnect/ui-react";
-import { TonStakers } from "tonstakers-sdk";
+import { Tonstakers } from "tonstakers-sdk";
 
 // Types for Tonstakers SDK responses
 export type WithdrawalNFT = {
@@ -25,7 +25,7 @@ export function useTonstakers() {
   const [tonConnectUI] = useTonConnectUI();
   const userAddress = useTonAddress();
   const wallet = useTonWallet();
-  const [sdk, setSdk] = useState<TonStakers | null>(null);
+  const [sdk, setSdk] = useState<Tonstakers | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Balance states
@@ -98,8 +98,8 @@ export function useTonstakers() {
         console.log("🚀 Initializing Tonstakers SDK for address:", userAddress);
 
         // Initialize with testnet - SDK auto-detects testnet
-        const tonStakers = new TonStakers(tonConnectUI);
-        console.log("📦 TonStakers instance created");
+        const tonStakers = new Tonstakers({ connector: tonConnectUI });
+        console.log("📦 Tonstakers instance created");
 
         // Wait for initialization event with timeout
         const initPromise = new Promise<void>((resolve, reject) => {
