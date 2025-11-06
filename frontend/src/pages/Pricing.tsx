@@ -76,8 +76,25 @@ const BASE_PLANS: BasePlan[] = [
 /* -----------------------------
    TON helpers (payload/address)
 --------------------------------*/
+function normalizeTestnetAddress(addr: string): string {
+  const raw = stripTonLink(addr.trim());
+  let parsed: Address;
+  try {
+    parsed = Address.parse(raw); // accepts both raw ("0:<64hex>") and friendly
+  } catch (e) {
+    console.error("Address.parse failed for:", raw, e);
+    throw new Error("Merchant address is not a valid TON address string");
+  }
+  // Wallet-friendly, URL-safe, testnet user address
+  const friendly = parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
+  if (!/^[A-Za-z0-9_-]+$/.test(friendly)) {
+    throw new Error("Normalized address contains invalid characters");
+  }
+  return friendly;
+}
 
-// Comment payload -> base64 BOC
+
+
 // Comment payload -> base64 BOC (browser-safe)
 function makeCommentPayload(text: string): string {
   const safeText = text.length > 180 ? text.slice(0, 177) + "..." : text;
@@ -113,12 +130,12 @@ function stripTonLink(s: string) {
   return t;
 }
 
-function normalizeTestnetAddress(addr: string): string {
-  const raw = stripTonLink(addr);
-  const parsed = Address.parse(raw); // throws if invalid
-  // Non-bounceable tends to be friendlier for typical wallets
-  return parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
-}
+// function normalizeTestnetAddress(addr: string): string {
+//   const raw = stripTonLink(addr);
+//   const parsed = Address.parse(raw); // throws if invalid
+//   // Non-bounceable tends to be friendlier for typical wallets
+//   return parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
+// }
 
 // Preflight checks before sendTransaction
 function preflightTon({
@@ -255,22 +272,12 @@ export default function Pricing() {
         startsWith: normalizedMerchant.slice(0, 2),
       });
 
-      function normalizeTestnetAddress(addr: string): string {
-        const raw = stripTonLink(addr.trim());
-        let parsed: Address;
-        try {
-          parsed = Address.parse(raw); // accepts both raw ("0:<64hex>") and friendly
-        } catch (e) {
-          console.error("Address.parse failed for:", raw, e);
-          throw new Error("Merchant address is not a valid TON address string");
-        }
-        // Wallet-friendly user-format for TESTNET
-        const friendly = parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
-        if (!/^[A-Za-z0-9_-]+$/.test(friendly)) {
-          throw new Error("Normalized address contains invalid characters");
-        }
-        return friendly;
-      }
+      // function normalizeTestnetAddress(addr: string): string {
+      //   const raw = stripTonLink(addr);
+      //   const parsed = Address.parse(raw); // throws if invalid
+      //   // Non-bounceable tends to be friendlier for typical wallets
+      //   return parsed.toString({ urlSafe: true, bounceable: false, testOnly: true });
+      // }
       
 
       // 4) Optional comment so you can match payments on the backend

@@ -1,5 +1,4 @@
-import { Buffer } from "buffer";
-window.Buffer = Buffer;
+import "./polyfills";
 
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -14,9 +13,3 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </TonConnectUIProvider>
 );
-
-// import { createRoot } from "react-dom/client";
-// import App from "./App.tsx";
-// import "./index.css";
-
-// createRoot(document.getElementById("root")!).render(<App />);

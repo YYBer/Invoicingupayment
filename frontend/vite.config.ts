@@ -8,8 +8,8 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
+      "/api": {
+        target: "http://localhost:3001",
         changeOrigin: true,
         secure: false,
       },
@@ -22,14 +22,16 @@ export default defineConfig(({ mode }) => ({
       buffer: "buffer",
     },
   },
-  define: {
-    global: "globalThis",
-  },
   optimizeDeps: {
+    include: ["buffer"],
     esbuildOptions: {
       define: {
         global: "globalThis",
       },
     },
+  },
+  define: {
+    global: "globalThis",
+    "process.env": {},
   },
 }));
