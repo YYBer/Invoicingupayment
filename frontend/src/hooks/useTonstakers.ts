@@ -111,7 +111,29 @@ export function useTonstakers() {
           const initHandler = () => {
             clearTimeout(timeout);
             console.log("✅ Tonstakers SDK initialized successfully (event fired)");
-            resolve();
+            // Double check the ready property
+            if (tonStakers.ready) {
+              console.log("✅ SDK ready property is true");
+              resolve();
+            } else {
+              console.warn("⚠️ Event fired but SDK not ready yet, polling...");
+              // Poll for ready state
+              const pollInterval = setInterval(() => {
+                if (tonStakers.ready) {
+                  clearInterval(pollInterval);
+                  console.log("✅ SDK ready property is now true");
+                  resolve();
+                }
+              }, 100);
+
+              // Safety timeout for polling
+              setTimeout(() => {
+                clearInterval(pollInterval);
+                if (!tonStakers.ready) {
+                  reject(new Error("SDK ready property never became true"));
+                }
+              }, 10000);
+            }
           };
 
           tonStakers.addEventListener("initialized", initHandler);
@@ -130,26 +152,9 @@ export function useTonstakers() {
         tonStakers.addEventListener("deinitialized", deinitHandler);
         deinitListenerAdded = true;
 
-        // Try to wait for the initialization event
-        try {
-          await initPromise;
-          console.log("✅ Init promise resolved");
-        } catch (timeoutError) {
-          // If timeout, check if SDK methods are available anyway
-          console.warn("⚠️ Initialization event timeout, checking SDK methods...");
-
-          // Try calling a basic method to see if SDK is actually ready
-          try {
-            if (tonStakers && typeof tonStakers.getTvl === 'function') {
-              console.log("✅ SDK methods are available despite timeout, proceeding...");
-            } else {
-              throw new Error("SDK methods not available");
-            }
-          } catch (methodError) {
-            console.error("❌ SDK not functional:", methodError);
-            throw timeoutError;
-          }
-        }
+        // Wait for the initialization event and ready state
+        await initPromise;
+        console.log("✅ Init promise resolved");
 
         if (isMounted) {
           setSdk(tonStakers);
@@ -308,6 +313,10 @@ export function useTonstakers() {
         throw new Error("SDK not initialized. Please ensure your wallet is connected.");
       }
 
+      if (!sdk.ready) {
+        throw new Error("SDK is not fully ready yet. Please wait a moment and try again.");
+      }
+
       try {
         const tx = await sdk.stake(amount);
         if (!tx) {
@@ -337,6 +346,10 @@ export function useTonstakers() {
       throw new Error("SDK not initialized. Please ensure your wallet is connected.");
     }
 
+    if (!sdk.ready) {
+      throw new Error("SDK is not fully ready yet. Please wait a moment and try again.");
+    }
+
     try {
       const tx = await sdk.stakeMax();
       if (!tx) {
@@ -362,6 +375,10 @@ export function useTonstakers() {
     async (amount: string) => {
       if (!sdk || !isInitialized) {
         throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+      }
+
+      if (!sdk.ready) {
+        throw new Error("SDK is not fully ready yet. Please wait a moment and try again.");
       }
 
       try {
@@ -390,6 +407,10 @@ export function useTonstakers() {
     async (amount: string) => {
       if (!sdk || !isInitialized) {
         throw new Error("SDK not initialized. Please ensure your wallet is connected.");
+      }
+
+      if (!sdk.ready) {
+        throw new Error("SDK is not fully ready yet. Please wait a moment and try again.");
       }
 
       try {
@@ -423,6 +444,10 @@ export function useTonstakers() {
         throw new Error("SDK not initialized. Please ensure your wallet is connected.");
       }
 
+      if (!sdk.ready) {
+        throw new Error("SDK is not fully ready yet. Please wait a moment and try again.");
+      }
+
       try {
         const tx = await sdk.unstakeBestRate(amount);
         if (!tx) {
@@ -448,7 +473,7 @@ export function useTonstakers() {
   return {
     // Connection state
     isConnected: !!userAddress,
-    isInitialized,
+    isInitialized: isInitialized && (sdk?.ready ?? false), // Ensure SDK is actually ready
     isLoading,
 
     // Balances
