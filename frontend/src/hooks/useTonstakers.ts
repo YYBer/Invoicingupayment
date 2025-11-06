@@ -60,7 +60,7 @@ export function useTonstakers() {
     if (!userAddress) return "0";
 
     try {
-      // Try to use TON Center API (testnet)
+      // Use TON Center API (mainnet by default, testnet if detected)
       const isTestnet = wallet?.account.chain === "-3"; // -3 is testnet chain ID
       const apiUrl = isTestnet
         ? "https://testnet.toncenter.com/api/v2/getAddressBalance"
@@ -70,8 +70,8 @@ export function useTonstakers() {
       const data = await response.json();
 
       if (data.ok && data.result) {
-        console.log("Wallet balance fetched:", data.result);
-        return data.result; // Returns balance in nanotons
+        console.log("Wallet balance fetched from", isTestnet ? "testnet" : "mainnet", ":", data.result);
+        return String(data.result); // Returns balance in nanotons as string
       }
     } catch (error) {
       console.warn("Failed to fetch wallet balance from API:", error);
@@ -89,8 +89,6 @@ export function useTonstakers() {
     }
 
     let isMounted = true;
-    let initListenerAdded = false;
-    let deinitListenerAdded = false;
 
     const initSdk = async () => {
       try {
@@ -137,7 +135,6 @@ export function useTonstakers() {
           };
 
           tonStakers.addEventListener("initialized", initHandler);
-          initListenerAdded = true;
           console.log("👂 Added 'initialized' event listener");
         });
 
@@ -150,7 +147,6 @@ export function useTonstakers() {
         };
 
         tonStakers.addEventListener("deinitialized", deinitHandler);
-        deinitListenerAdded = true;
 
         // Wait for the initialization event and ready state
         await initPromise;
@@ -211,16 +207,16 @@ export function useTonstakers() {
           const [staked, available] = await Promise.all([
             sdk.getStakedBalance().catch((e) => {
               console.warn("Failed to get staked balance:", e);
-              return "0";
+              return 0;
             }),
             sdk.getAvailableBalance().catch((e) => {
               console.warn("Failed to get available balance:", e);
-              return "0";
+              return 0;
             }),
           ]);
 
-          setStakedBalance(staked);
-          setAvailableBalance(available);
+          setStakedBalance(String(staked));
+          setAvailableBalance(String(available));
           console.log("Staked balance:", staked, "Available:", available);
         } catch (error) {
           console.warn("Failed to fetch staking balances:", error);
@@ -233,7 +229,7 @@ export function useTonstakers() {
           const [poolTvl, stakers, liquidity, apy] = await Promise.all([
             sdk.getTvl().catch((e) => {
               console.warn("Failed to get TVL:", e);
-              return "0";
+              return 0;
             }),
             sdk.getStakersCount().catch((e) => {
               console.warn("Failed to get stakers count:", e);
@@ -241,7 +237,7 @@ export function useTonstakers() {
             }),
             sdk.getInstantLiquidity().catch((e) => {
               console.warn("Failed to get instant liquidity:", e);
-              return "0";
+              return 0;
             }),
             sdk.getCurrentApy().catch((e) => {
               console.warn("Failed to get APY:", e);
@@ -249,9 +245,9 @@ export function useTonstakers() {
             }),
           ]);
 
-          setTvl(poolTvl);
+          setTvl(String(poolTvl));
           setStakersCount(stakers);
-          setInstantLiquidity(liquidity);
+          setInstantLiquidity(String(liquidity));
           setCurrentApy(apy);
         } catch (error) {
           console.warn("Failed to fetch pool info:", error);
@@ -268,15 +264,26 @@ export function useTonstakers() {
         // Fetch withdrawal NFTs with error handling
         try {
           const nfts = await sdk.getActiveWithdrawalNFTs();
-          setWithdrawalNFTs(nfts);
+          // Convert SDK format to our format
+          const mappedNfts: WithdrawalNFT[] = nfts.map((nft: any) => ({
+            address: nft.address?.address || "",
+            amount: String(nft.tsTONAmount || 0),
+            estimatedPayoutDate: new Date(nft.estimatedPayoutDateTime || Date.now()),
+            roundEndTime: new Date(nft.roundEndTime || Date.now()),
+          }));
+          setWithdrawalNFTs(mappedNfts);
         } catch (error) {
           console.warn("Failed to fetch withdrawal NFTs:", error);
         }
 
-        // Fetch round timestamps with error handling
+        // Fetch round timestamps with error handling (if method exists)
         try {
-          const timestamps = await sdk.getRoundTimestamps();
-          setRoundTimestamps(timestamps);
+          if (typeof (sdk as any).getRoundTimestamps === 'function') {
+            const timestamps = await (sdk as any).getRoundTimestamps();
+            setRoundTimestamps(timestamps);
+          } else {
+            console.warn("getRoundTimestamps method not available in this SDK version");
+          }
         } catch (error) {
           console.warn("Failed to fetch round timestamps:", error);
         }
@@ -318,11 +325,14 @@ export function useTonstakers() {
       }
 
       try {
-        const tx = await sdk.stake(amount);
+        // Convert string amount to BigInt for SDK
+        const amountBigInt = BigInt(amount);
+        const tx = await sdk.stake(amountBigInt);
         if (!tx) {
           throw new Error("Failed to prepare staking transaction");
         }
-        await tonConnectUI.sendTransaction(tx);
+        // SDK returns transaction response which has the correct format
+        await tonConnectUI.sendTransaction(tx as any);
         // Wait a bit before refreshing to ensure blockchain updates
         setTimeout(() => refreshData(), 2000);
         return true;
@@ -355,7 +365,7 @@ export function useTonstakers() {
       if (!tx) {
         throw new Error("Failed to prepare staking transaction");
       }
-      await tonConnectUI.sendTransaction(tx);
+      await tonConnectUI.sendTransaction(tx as any);
       setTimeout(() => refreshData(), 2000);
       return true;
     } catch (error) {
@@ -382,11 +392,12 @@ export function useTonstakers() {
       }
 
       try {
-        const tx = await sdk.unstake(amount);
+        const amountBigInt = BigInt(amount);
+        const tx = await sdk.unstake(amountBigInt);
         if (!tx) {
           throw new Error("Failed to prepare withdrawal transaction");
         }
-        await tonConnectUI.sendTransaction(tx);
+        await tonConnectUI.sendTransaction(tx as any);
         setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {
@@ -414,11 +425,12 @@ export function useTonstakers() {
       }
 
       try {
-        const tx = await sdk.unstakeInstant(amount);
+        const amountBigInt = BigInt(amount);
+        const tx = await sdk.unstakeInstant(amountBigInt);
         if (!tx) {
           throw new Error("Failed to prepare instant withdrawal transaction");
         }
-        await tonConnectUI.sendTransaction(tx);
+        await tonConnectUI.sendTransaction(tx as any);
         setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {
@@ -449,11 +461,12 @@ export function useTonstakers() {
       }
 
       try {
-        const tx = await sdk.unstakeBestRate(amount);
+        const amountBigInt = BigInt(amount);
+        const tx = await sdk.unstakeBestRate(amountBigInt);
         if (!tx) {
           throw new Error("Failed to prepare best rate withdrawal transaction");
         }
-        await tonConnectUI.sendTransaction(tx);
+        await tonConnectUI.sendTransaction(tx as any);
         setTimeout(() => refreshData(), 2000);
         return true;
       } catch (error) {

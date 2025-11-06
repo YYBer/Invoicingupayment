@@ -381,7 +381,7 @@ export default function Profile() {
         {/* TON Staking Card */}
         <Card className="mb-8 p-8">
           <h2 className="mb-6 text-2xl font-bold text-foreground">
-            TON Staking (Testnet)
+            TON Staking
           </h2>
 
           {!tonstakers.isConnected ? (
